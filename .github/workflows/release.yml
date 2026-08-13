@@ -75,6 +75,14 @@ jobs:
           }
 
       - name: Build, test, and audit the installer
+        # Use neutral CI-only identity values so privacy checks do not treat
+        # GitHub runner defaults as user data or preinstalled service secrets.
+        env:
+          LOGNAME: ForTestBuildUser
+          USER: ForTestBuildUser
+          LNAME: ForTestBuildUser
+          USERNAME: ForTestBuildUser
+          PGPASSWORD: ""
         shell: pwsh
         run: ./windows_native/build.ps1 -Clean
 
