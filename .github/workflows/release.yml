@@ -9,7 +9,7 @@ on:
         default: v0.2.12
         type: string
 
-# The workflow uses GitHub's short-lived token and never stores a long-lived credential.
+# 发布流程只使用 GitHub 自动签发的短期令牌，不保存长期凭据。
 permissions:
   contents: write
 
@@ -57,7 +57,7 @@ jobs:
             throw "Release tag $env:RELEASE_TAG does not match VERSION $version."
           }
 
-          # Build only an existing tag that points to the checked-out commit.
+          # 只允许构建指向当前检出提交的现有标签，避免发布错误源码。
           $headCommit = (git rev-parse HEAD).Trim()
           $tagCommit = (git rev-list -n 1 $env:RELEASE_TAG).Trim()
           if ($headCommit -ne $tagCommit) {
@@ -66,17 +66,46 @@ jobs:
 
           "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Install Inno Setup
+      - name: Install verified Inno Setup 7
         shell: pwsh
         run: |
-          choco install innosetup --no-progress -y
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to install Inno Setup."
+          $downloadUrl = "https://github.com/jrsoftware/issrc/releases/download/is-7_0_2/innosetup-7.0.2-x64.exe"
+          $expectedHash = "5AD54CA3DEF786F8F4212552E54CC6D8D61329E2D24A1CFEE0571D42C2684FF1"
+          $setupPath = Join-Path $env:RUNNER_TEMP "innosetup-7.0.2-x64.exe"
+          $installPath = Join-Path $PWD "windows_native/.tools/Inno Setup 7"
+
+          Invoke-WebRequest -Uri $downloadUrl -OutFile $setupPath
+          $actualHash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash
+          if ($actualHash -ne $expectedHash) {
+            throw "Inno Setup download hash verification failed."
+          }
+
+          # 下载后同时校验哈希和发布者签名，避免未经验证的编译器进入发布链。
+          $signature = Get-AuthenticodeSignature -LiteralPath $setupPath
+          if (
+            $signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
+            $signature.SignerCertificate.Subject -notmatch "Pyrsys B\.V\."
+          ) {
+            throw "Inno Setup publisher verification failed."
+          }
+
+          $setupArguments = @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/SP-",
+            "/DIR=`"$installPath`""
+          )
+          $setupProcess = Start-Process -FilePath $setupPath -ArgumentList $setupArguments -Wait -PassThru
+          if ($setupProcess.ExitCode -ne 0) {
+            throw "Failed to install Inno Setup 7."
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $installPath "ISCC.exe"))) {
+            throw "Inno Setup 7 compiler was not installed."
           }
 
       - name: Build, test, and audit the installer
-        # Use neutral CI-only identity values so privacy checks do not treat
-        # GitHub runner defaults as user data or preinstalled service secrets.
+        # 使用中性的 CI 构建身份，避免把托管机默认用户或预装服务变量误判为用户数据。
         env:
           LOGNAME: ForTestBuildUser
           USER: ForTestBuildUser
@@ -107,7 +136,7 @@ jobs:
             [System.Text.ASCIIEncoding]::new()
           )
 
-          # Decode a UTF-8 Chinese release-note template without depending on runner code pages.
+          # 以 Base64 解码 UTF-8 中文发布说明，避免依赖托管机的默认代码页。
           $notesBase64 = "IyBGb3JUZXN0IHZfX1ZFUlNJT05fXwoKRm9yVGVzdCDnmoTpppbkuKogR2l0SHViIFJlbGVhc2XvvIzmj5Dkvpvlj6/nm7TmjqXlronoo4XnmoQgV2luZG93cyB4NjQg5a6J6KOF5YyF44CCCgojIyDmnKzniYjljIXlkKsKCi0gSmVua2lucyDlv6vmjbfpg6jnvbLvvJrpm4bkuK3nrqHnkIbpg6jnvbLlj4LmlbDjgIHop6blj5Hku7vliqHlubbmn6XnnIvmiafooYznirbmgIHjgIIKLSDliIbmraXmtYvor5XnlKjkvovnlJ/miJDvvJrmlK/mjIHoh6rlrprkuYnmraXpqqTjgIHmjInmraXpqqTosIPnlKjmqKHlnovvvIzku6Xlj4rlpI3nlKjnlKjkvovnu4Tku7bmqKHmnb/jgIIKLSDmlofmoaMgTUNQIOS4jiBDb2RleCBDTEnvvJrlvZPliY3ph43ngrnmlK/mjIHmlofmoaPlnosgTUNQIOaOpeWFpe+8jOW5tumSiOWvuSBDb2RleCBDTEkg5bel5L2c5rWB5YGa5LqG6YCC6YWN44CCCi0gV2luZG93cyDljp/nlJ/moYzpnaLkvZPpqozvvJrmj5DkvpvlpJror63oqIDjgIHkuLvpopjjgIHku7vliqHpmJ/liJfjgIHlm57mlLbnq5nnrYnln7rnoYDog73lipvjgIIKLSDlrozlloTpobnnm64gUkVBRE1F44CB55uu5b2V6K+05piO44CB5Y2P5L2c5pa55byP5LiO57uP6L+H6ISx5pWP5aSE55CG55qE55WM6Z2i6aKE6KeI44CCCgojIyDkuIvovb3kuI7moKHpqowKCi0gYEZvclRlc3QtV2luZG93cy14NjQtU2V0dXAtX19WRVJTSU9OX18uZXhlYO+8mldpbmRvd3MgeDY0IOWuieijheeoi+W6j+OAggotIGBGb3JUZXN0LVdpbmRvd3MteDY0LVNldHVwLV9fVkVSU0lPTl9fLmV4ZS5zaGEyNTZg77yaU0hBLTI1NiDmoKHpqozmlofku7bjgIIKCuWuieijheeoi+W6jyBTSEEtMjU277yaCgpgX19TSEEyNTZfX2AKCuezu+e7n+imgeaxgu+8mldpbmRvd3MgMTAgMTgwOSDmiJbmm7Tpq5jniYjmnKzjgIFXaW5kb3dzIDEx77yMNjQg5L2N44CC6buY6K6k5oyJ5b2T5YmN55So5oi35a6J6KOF77yM5peg6ZyA566h55CG5ZGY5p2D6ZmQ44CCCgojIyDpqozor4Hnu5PmnpwKCi0gV2luZG93cyDljp/nlJ/moYzpnaLmtYvor5XvvJoxODcg6aG56YCa6L+H44CCCi0g5YWx5Lqr5Lia5Yqh5Zue5b2S77yaMzMwIOmhuemAmui/h+OAgTcg6aG56Lez6L+H77yb5Y+m5pyJIDE3OCDpobnlrZDmtYvor5XpgJrov4fjgIIKLSDmupDnoIHkuI7lronoo4XkuqfnianpmpDnp4Hmo4Dmn6XpgJrov4fjgIIKLSDlronoo4XjgIHln7rnoYDlkK/liqjjgIHlrozmlbTlkK/liqjlkozkuLvopoHpobXpnaLkuqTkupLlhpLng5/pqozor4HpgJrov4fjgIIKCiMjIOS9v+eUqOivtOaYjgoKLSDlronoo4XljIXlvZPliY3mnKrotK3kubDllYbkuJrku6PnoIHnrb7lkI3or4HkuabvvIxXaW5kb3dzIOWPr+iDveaYvuekuuS/oeiqieaPkOekuu+8m+ivt+S7heS7juacrCBSZWxlYXNlIOS4i+i9veW5tuaguOWvuSBTSEEtMjU244CCCi0gSmVua2luc+OAgeaooeWei+S4juaWh+aho+W5s+WPsOetieWklumDqOacjeWKoemcgOimgeeUqOaIt+iHquihjOmFjee9rue9kee7nOOAgei0puWPt+OAgeWHreaNruS4juebuOW6lOadg+mZkOOAggotIOacrOS7k+W6k+mHh+eUqCBQb2x5Rm9ybSBOb25jb21tZXJjaWFsIExpY2Vuc2UgMS4wLjDvvIzmmK/mupDnoIHlj6/nlKjnmoTpnZ7llYbkuJrorrjlj6/vvIzlubbpnZ4gT1NJIOWumuS5ieeahOW8gOa6kOiuuOWPr++8m+WPr+eUqOS6juWtpuS5oOOAgeeglOeptuOAgeS4quS6uumhueebruWPiuWFtuS7luiuuOWPr+WFgeiuuOeahOmdnuWVhuS4mueUqOmAlO+8jOacque7j+aOiOadg+S4jeW+l+WVhueUqOOAggo="
           $notesTemplate = [System.Text.Encoding]::UTF8.GetString(
             [System.Convert]::FromBase64String($notesBase64)
@@ -135,7 +164,7 @@ jobs:
             $env:INSTALLER_PATH,
             $env:CHECKSUM_PATH,
             "--verify-tag",
-            "--title", "ForTest $env:RELEASE_VERSION",
+            "--title", "ForTest $env:RELEASE_TAG",
             "--notes-file", $env:RELEASE_NOTES_PATH,
             "--latest"
           )
