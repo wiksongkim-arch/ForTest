@@ -1,6 +1,6 @@
-# ForTest
+[English](./README.en.md) | 简体中文
 
-简体中文 | [English](README.en.md)
+# ForTest
 
 由 Codex 协助开发、面向软件测试工程师的原生 Windows 桌面工具，聚焦 Jenkins 快捷部署与高质量测试用例生成。
 

@@ -1,6 +1,6 @@
-# ForTest
+English | [简体中文](./README.md)
 
-[简体中文](README.md) | English
+# ForTest
 
 A native Windows desktop tool developed with the assistance of Codex for software test engineers, focused on streamlined Jenkins deployment and high-quality test case generation.
 
