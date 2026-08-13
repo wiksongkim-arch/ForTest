@@ -1,5 +1,7 @@
 # ForTest
 
+简体中文 | [English](README.en.md)
+
 由 Codex 协助开发、面向软件测试工程师的原生 Windows 桌面工具，聚焦 Jenkins 快捷部署与高质量测试用例生成。
 
 [下载最新版本](https://github.com/wiksongkim-arch/ForTest/releases/latest) · [提交问题](https://github.com/wiksongkim-arch/ForTest/issues) · [参与贡献](CONTRIBUTING.md) · [安全报告](SECURITY.md)
@@ -112,7 +114,7 @@ ForTest 是一款使用 Codex 参与开发、面向软件测试工程师的 Wind
 | `tests/` | 共享业务核心的单元、集成、安全和回归测试。 |
 | `windows_native/tests/` | 原生桌面端、Jenkins、任务调度、启动流程和离屏 UI 测试。 |
 | `windows_native/assets/` | 应用图标及可合法分发的内置模板。 |
-| `png/` | README 使用的脱敏界面预览图。 |
+| `png/` | 中英文 README 使用的脱敏界面预览图。 |
 | `.github/` | Issue/PR 模板与 Windows CI 工作流。 |
 | `docs/` | 面向维护者长期有效的安全、隐私和源码发布规范。 |
 | `scripts/` | 数据迁移等维护脚本。 |
@@ -144,6 +146,7 @@ ForTest 欢迎在明确边界内参与改进：
 
 - 使用 [GitHub Issues](https://github.com/wiksongkim-arch/ForTest/issues) 报告可复现的问题或提出建议；请勿附带真实凭据、私有文档或内部服务地址。
 - 提交代码前请阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md) 和 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)，保持改动聚焦，并补充相应测试与多语言文案。
+- 修改 `README.md` 或 `README.en.md` 时，必须在同一次提交中同步更新另一语言版本，并核对对应语言的界面截图、链接和能力边界。
 - 安全漏洞请按 [`SECURITY.md`](SECURITY.md) 提供的私密渠道报告，不要先在公开 Issue 中披露。
 - Pull Request 和 `main` 分支推送会在 Windows 环境执行隐私门禁及两组回归测试。
 

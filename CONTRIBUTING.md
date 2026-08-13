@@ -32,6 +32,7 @@ powershell -ExecutionPolicy Bypass -File windows_native\build.ps1
 
 - 每个 Pull Request 聚焦一个问题，说明修改原因、主要行为和验证结果。
 - 新功能或缺陷修复应包含对应测试；界面修改建议附截图。
+- `README.md` 与 `README.en.md` 是必须同步维护的中英文版本。修改任一文件时，应在同一次提交中更新另一文件，并同步检查对应语言的截图、链接、版本号和能力边界。
 - 保持提交信息简洁明确，例如 `fix: prevent duplicate deployment tasks`。
 - 确认测试、隐私门禁和 GitHub Actions 全部通过。
 
