@@ -21,7 +21,10 @@ def format_project_refresh_time(value: str) -> str:
         parsed = datetime.fromisoformat(normalized)
     except ValueError:
         return normalized
-    return parsed.astimezone().strftime("%Y%m%d%H%M%S")
+    # The service timestamp already carries the timezone that defines the
+    # displayed wall-clock time.  Converting it to the runner's timezone makes
+    # the same cached value render differently on UTC CI hosts.
+    return parsed.strftime("%Y%m%d%H%M%S")
 
 
 class AnimatedRefreshIcon(QLabel):

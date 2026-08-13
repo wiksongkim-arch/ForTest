@@ -43,6 +43,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r windows_native/requirements-build.txt -r requirements.txt
+          python -m pip install --force-reinstall --no-deps openai-codex-cli-bin==0.144.4
 
       - name: Audit source privacy
         run: python windows_native/package_privacy.py source --project-root .

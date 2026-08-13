@@ -994,7 +994,10 @@ class TaskManager:
             return copy.deepcopy(task)
 
     def _iso_now(self) -> str:
-        return self._clock().astimezone().isoformat(timespec="seconds")
+        current = self._clock()
+        if current.tzinfo is None:
+            current = current.astimezone()
+        return current.isoformat(timespec="seconds")
 
 
 def _default_preferences(data_root: Path) -> _Preferences:
