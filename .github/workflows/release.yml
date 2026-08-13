@@ -25,7 +25,6 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       PYTHONUTF8: "1"
       RELEASE_TAG: ${{ inputs.tag }}
-      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Check out the release tag
@@ -33,6 +32,7 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -115,6 +115,8 @@ jobs:
           "RELEASE_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $releaseArguments = @(
@@ -132,6 +134,8 @@ jobs:
           }
 
       - name: Verify published assets
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $assetNames = gh release view $env:RELEASE_TAG --json assets --jq '.assets[].name'
