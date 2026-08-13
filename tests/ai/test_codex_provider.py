@@ -1378,8 +1378,8 @@ class CodexCLIBoundaryTests(unittest.TestCase):
             cli_candidates = provider._candidate_cli_paths()
             sdk_candidates = provider._candidate_sdk_paths()
 
-        self.assertEqual(cli_candidates, [saved])
-        self.assertEqual(sdk_candidates, [saved])
+        self.assertEqual(cli_candidates, [saved.resolve()])
+        self.assertEqual(sdk_candidates, [saved.resolve()])
 
     def test_previous_qaq_managed_cli_path_remains_compatible(self):
         managed_cli = self.make_executable("legacy-managed-cli.exe")
@@ -1471,7 +1471,9 @@ class CodexCLIBoundaryTests(unittest.TestCase):
 
         args = captured["args"]
         kwargs = captured["kwargs"]
-        self.assertEqual(args[0:3], [str(executable), "exec", "--ephemeral"])
+        self.assertEqual(
+            args[0:3], [str(executable.resolve()), "exec", "--ephemeral"]
+        )
         self.assertIn("--ignore-user-config", args)
         self.assertIn("--ignore-rules", args)
         self.assertIn('model_reasoning_effort="xhigh"', args)
@@ -1535,7 +1537,7 @@ class CodexCLIBoundaryTests(unittest.TestCase):
         popen.assert_not_called()
         self.assertEqual(probe.call_count, 1)
         self.assertEqual(
-            probe.call_args.args[0], [str(executable), "--version"]
+            probe.call_args.args[0], [str(executable.resolve()), "--version"]
         )
 
     def test_cli_health_uses_free_login_status_without_inference(self):
@@ -1560,7 +1562,7 @@ class CodexCLIBoundaryTests(unittest.TestCase):
         self.assertEqual(
             [item[0] for item in commands],
             [
-                [str(executable), "--version"],
+                [str(executable.resolve()), "--version"],
                 [
                     str(executable.resolve()),
                     "--config",
