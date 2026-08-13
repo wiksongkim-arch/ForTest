@@ -1,0 +1,146 @@
+name: Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish
+        required: true
+        default: v0.2.12
+        type: string
+
+# The workflow uses GitHub's short-lived token and never stores a long-lived credential.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+      RELEASE_TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            windows_native/requirements-build.txt
+            windows_native/requirements-runtime.txt
+
+      - name: Enable Git long paths
+        shell: pwsh
+        run: git config --global core.longpaths true
+
+      - name: Verify tag and version
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath windows_native/VERSION -Raw).Trim()
+          $expectedTag = "v$version"
+          if ($env:RELEASE_TAG -ne $expectedTag) {
+            throw "Release tag $env:RELEASE_TAG does not match VERSION $version."
+          }
+
+          # Build only an existing tag that points to the checked-out commit.
+          $headCommit = (git rev-parse HEAD).Trim()
+          $tagCommit = (git rev-list -n 1 $env:RELEASE_TAG).Trim()
+          if ($headCommit -ne $tagCommit) {
+            throw "Tag $env:RELEASE_TAG does not point to the checked-out commit."
+          }
+
+          "RELEASE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install Inno Setup."
+          }
+
+      - name: Build, test, and audit the installer
+        shell: pwsh
+        run: ./windows_native/build.ps1 -Clean
+
+      - name: Prepare release assets and notes
+        shell: pwsh
+        run: |
+          $installerName = "ForTest-Windows-x64-Setup-$env:RELEASE_VERSION.exe"
+          $installerPath = Join-Path $PWD "windows_native/dist/installer/$installerName"
+          if (-not (Test-Path -LiteralPath $installerPath)) {
+            throw "Installer was not created: $installerPath"
+          }
+
+          $hash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash
+          $checksumPath = "$installerPath.sha256"
+          $checksumLine = "$hash  $installerName`n"
+          [System.IO.File]::WriteAllText(
+            $checksumPath,
+            $checksumLine,
+            [System.Text.ASCIIEncoding]::new()
+          )
+
+          # Decode a UTF-8 Chinese release-note template without depending on runner code pages.
+          $notesBase64 = "IyBGb3JUZXN0IHZfX1ZFUlNJT05fXwoKRm9yVGVzdCDnmoTpppbkuKogR2l0SHViIFJlbGVhc2XvvIzmj5Dkvpvlj6/nm7TmjqXlronoo4XnmoQgV2luZG93cyB4NjQg5a6J6KOF5YyF44CCCgojIyDmnKzniYjljIXlkKsKCi0gSmVua2lucyDlv6vmjbfpg6jnvbLvvJrpm4bkuK3nrqHnkIbpg6jnvbLlj4LmlbDjgIHop6blj5Hku7vliqHlubbmn6XnnIvmiafooYznirbmgIHjgIIKLSDliIbmraXmtYvor5XnlKjkvovnlJ/miJDvvJrmlK/mjIHoh6rlrprkuYnmraXpqqTjgIHmjInmraXpqqTosIPnlKjmqKHlnovvvIzku6Xlj4rlpI3nlKjnlKjkvovnu4Tku7bmqKHmnb/jgIIKLSDmlofmoaMgTUNQIOS4jiBDb2RleCBDTEnvvJrlvZPliY3ph43ngrnmlK/mjIHmlofmoaPlnosgTUNQIOaOpeWFpe+8jOW5tumSiOWvuSBDb2RleCBDTEkg5bel5L2c5rWB5YGa5LqG6YCC6YWN44CCCi0gV2luZG93cyDljp/nlJ/moYzpnaLkvZPpqozvvJrmj5DkvpvlpJror63oqIDjgIHkuLvpopjjgIHku7vliqHpmJ/liJfjgIHlm57mlLbnq5nnrYnln7rnoYDog73lipvjgIIKLSDlrozlloTpobnnm64gUkVBRE1F44CB55uu5b2V6K+05piO44CB5Y2P5L2c5pa55byP5LiO57uP6L+H6ISx5pWP5aSE55CG55qE55WM6Z2i6aKE6KeI44CCCgojIyDkuIvovb3kuI7moKHpqowKCi0gYEZvclRlc3QtV2luZG93cy14NjQtU2V0dXAtX19WRVJTSU9OX18uZXhlYO+8mldpbmRvd3MgeDY0IOWuieijheeoi+W6j+OAggotIGBGb3JUZXN0LVdpbmRvd3MteDY0LVNldHVwLV9fVkVSU0lPTl9fLmV4ZS5zaGEyNTZg77yaU0hBLTI1NiDmoKHpqozmlofku7bjgIIKCuWuieijheeoi+W6jyBTSEEtMjU277yaCgpgX19TSEEyNTZfX2AKCuezu+e7n+imgeaxgu+8mldpbmRvd3MgMTAgMTgwOSDmiJbmm7Tpq5jniYjmnKzjgIFXaW5kb3dzIDEx77yMNjQg5L2N44CC6buY6K6k5oyJ5b2T5YmN55So5oi35a6J6KOF77yM5peg6ZyA566h55CG5ZGY5p2D6ZmQ44CCCgojIyDpqozor4Hnu5PmnpwKCi0gV2luZG93cyDljp/nlJ/moYzpnaLmtYvor5XvvJoxODcg6aG56YCa6L+H44CCCi0g5YWx5Lqr5Lia5Yqh5Zue5b2S77yaMzMwIOmhuemAmui/h+OAgTcg6aG56Lez6L+H77yb5Y+m5pyJIDE3OCDpobnlrZDmtYvor5XpgJrov4fjgIIKLSDmupDnoIHkuI7lronoo4XkuqfnianpmpDnp4Hmo4Dmn6XpgJrov4fjgIIKLSDlronoo4XjgIHln7rnoYDlkK/liqjjgIHlrozmlbTlkK/liqjlkozkuLvopoHpobXpnaLkuqTkupLlhpLng5/pqozor4HpgJrov4fjgIIKCiMjIOS9v+eUqOivtOaYjgoKLSDlronoo4XljIXlvZPliY3mnKrotK3kubDllYbkuJrku6PnoIHnrb7lkI3or4HkuabvvIxXaW5kb3dzIOWPr+iDveaYvuekuuS/oeiqieaPkOekuu+8m+ivt+S7heS7juacrCBSZWxlYXNlIOS4i+i9veW5tuaguOWvuSBTSEEtMjU244CCCi0gSmVua2luc+OAgeaooeWei+S4juaWh+aho+W5s+WPsOetieWklumDqOacjeWKoemcgOimgeeUqOaIt+iHquihjOmFjee9rue9kee7nOOAgei0puWPt+OAgeWHreaNruS4juebuOW6lOadg+mZkOOAggotIOacrOS7k+W6k+mHh+eUqCBQb2x5Rm9ybSBOb25jb21tZXJjaWFsIExpY2Vuc2UgMS4wLjDvvIzmmK/mupDnoIHlj6/nlKjnmoTpnZ7llYbkuJrorrjlj6/vvIzlubbpnZ4gT1NJIOWumuS5ieeahOW8gOa6kOiuuOWPr++8m+WPr+eUqOS6juWtpuS5oOOAgeeglOeptuOAgeS4quS6uumhueebruWPiuWFtuS7luiuuOWPr+WFgeiuuOeahOmdnuWVhuS4mueUqOmAlO+8jOacque7j+aOiOadg+S4jeW+l+WVhueUqOOAggo="
+          $notesTemplate = [System.Text.Encoding]::UTF8.GetString(
+            [System.Convert]::FromBase64String($notesBase64)
+          )
+          $notes = $notesTemplate.Replace("__VERSION__", $env:RELEASE_VERSION).Replace("__SHA256__", $hash)
+          $notesPath = Join-Path $env:RUNNER_TEMP "release-notes-$env:RELEASE_VERSION.md"
+          [System.IO.File]::WriteAllText(
+            $notesPath,
+            $notes.Trim() + "`n",
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
+          "INSTALLER_PATH=$installerPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CHECKSUM_PATH=$checksumPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_NOTES_PATH=$notesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "RELEASE_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        run: |
+          $releaseArguments = @(
+            "release", "create", $env:RELEASE_TAG,
+            $env:INSTALLER_PATH,
+            $env:CHECKSUM_PATH,
+            "--verify-tag",
+            "--title", "ForTest $env:RELEASE_VERSION",
+            "--notes-file", $env:RELEASE_NOTES_PATH,
+            "--latest"
+          )
+          & gh @releaseArguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub Release publication failed."
+          }
+
+      - name: Verify published assets
+        shell: pwsh
+        run: |
+          $assetNames = gh release view $env:RELEASE_TAG --json assets --jq '.assets[].name'
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to read the published Release."
+          }
+          if ($assetNames -notcontains (Split-Path -Leaf $env:INSTALLER_PATH)) {
+            throw "Published Release does not contain the installer."
+          }
+          if ($assetNames -notcontains (Split-Path -Leaf $env:CHECKSUM_PATH)) {
+            throw "Published Release does not contain the checksum file."
+          }
