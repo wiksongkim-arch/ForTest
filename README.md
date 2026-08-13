@@ -1,46 +1,131 @@
 # ForTest
 
-ForTest 是集成 PRD 测试用例生成与 Jenkins 快捷部署的纯原生 Windows x64 桌面端。
-桌面端复用 `backend`、`services` 与 `utils` 中的业务核心，不启动 Streamlit、
-FastAPI 或本地 Web 端口。旧 Web 入口与 PRD-to-CASE 插件均已退出活跃源码和交付链。
+面向软件测试工作的原生 Windows 桌面工具，将测试用例生成与 Jenkins 快捷部署集中到一个清爽、可持续扩展的工作台中。
+
+[下载最新版本](https://github.com/wiksongkim-arch/ForTest/releases/latest) · [提交问题](https://github.com/wiksongkim-arch/ForTest/issues) · [参与贡献](CONTRIBUTING.md) · [安全报告](SECURITY.md)
+
+## 简介
+
+ForTest 面向测试工程师和需要频繁处理交付任务的研发团队，目标是减少在文档、模型、模板和部署平台之间反复切换的成本。当前版本为纯原生 Windows x64 桌面应用，不依赖浏览器界面，也不会启动 Streamlit、FastAPI 或本地 Web 服务。
+
+目前已经实现两条主要工作流：
+
+- **Jenkins 快捷部署**：集中管理 Jenkins 连接和项目配置，支持单点部署、迭代部署、定时执行、任务排队、状态跟踪、停止任务与回收站管理。同一迭代任务内可并行提交部署子任务，不同迭代任务按顺序执行。
+- **测试用例生成**：可按实际团队流程自定义分步步骤，并为不同步骤分别选择模型、提示词版本和用例组件模板；支持任务并行、过程状态管理、本地结果备份以及在线文档输出。
+
+当前版本以**文档 MCP 接入**为主要在线文档通道，并对 **Codex CLI** 的发现、配置、模型选择和运行时版本管理进行了重点适配。更多文档平台和模型接入仍会逐步完善，请以每个 Release 的说明和应用内检测结果为准。
+
+项目仍在持续迭代。后续计划包括更多平台适配、线上问题处理客服机器人、基于本地代码的需求分析、需求调研与需求归档、本地项目代码管理以及数据库管理等能力。路线图仅表示当前方向，不代表具体版本承诺。
+
+## 核心特点
+
+- 原生 Qt 桌面体验，支持跟随系统、浅色和深色外观。
+- 简体中文、繁体中文和英文界面可即时切换。
+- 配置、任务记录、日志和生成文件统一保存在 `%LOCALAPPDATA%\ForTest\UserData`，不写入安装目录。
+- 密钥与普通配置分离保存，日志和错误信息会执行凭据脱敏。
+- 内置任务队列、回收站、异常提示和可恢复的数据迁移机制。
+- 安装包内置运行依赖与 Codex CLI 运行时，普通用户无需配置 Python 环境。
+
+## 快速开始
+
+### 系统要求
+
+- Windows 10 1809 或更高版本、Windows 11
+- 64 位操作系统（x64）
+- 使用 Jenkins 功能时，需要可访问的 Jenkins 服务及具备相应权限的账号
+- 使用在线文档和模型能力时，需要对应服务的网络访问条件与合法凭据
+
+### 安装与首次使用
+
+1. 打开 [GitHub Releases](https://github.com/wiksongkim-arch/ForTest/releases/latest)，下载 `ForTest-Windows-x64-Setup-0.2.12.exe`。
+2. 对照 Release 页面提供的 SHA-256 校验值确认文件完整性，然后运行安装程序。ForTest 默认安装到当前用户目录，不要求管理员权限。
+3. 启动 ForTest，根据首页配置状态完成必要设置：
+   - 快捷部署：填写 Jenkins 地址、用户名与 API Token，并检测连接。
+   - 测试用例生成：配置文档 MCP、输出位置、模型和提示词；使用 Codex CLI 时按应用提示完成登录或运行时选择。
+4. 返回对应工作区，新建部署任务或测试用例生成任务。
+
+> 当前公开安装包尚未进行商业代码签名，Windows 可能显示应用信誉提示。请只从本仓库 Releases 下载，并先核对 Release 中的 SHA-256；来源或摘要不一致时不要运行。
+
+## 界面预览
+
+### Jenkins 快捷部署
+
+支持项目刷新、单点部署、迭代部署、定时任务和执行状态跟踪。
+
+![ForTest Jenkins 快捷部署界面](png/1.png)
+
+### 分步测试用例生成
+
+生成页集中展示在线输出、本地备份、任务队列和回收站入口。
+
+![ForTest 测试用例生成任务界面](png/2-public.png)
+
+不同处理步骤可分别配置模型、提示词版本和用例组件模板，便于将团队方法沉淀为可复用流程。
+
+![ForTest 测试用例分步配置界面](png/3.png)
+
+### AI 与运行时配置
+
+统一管理模型配置、Codex CLI 来源与版本、模型以及推理参数，并可逐项检测连接状态。
+
+![ForTest AI 与 Codex CLI 配置界面](png/4.png)
+
+> 预览图使用演示或脱敏信息。提交 Issue 或截图前，也请移除文档链接、账号、Token、本机路径及业务数据。
+
+## 当前能力边界
+
+- 仅提供 Windows x64 桌面版本，暂不支持 macOS、Linux、ARM64 或 Web 端。
+- 在线需求文档目前以文档 MCP 工作流为主，其他协作平台尚未作为稳定能力发布。
+- Codex CLI 是当前重点验证的模型调用方式；其他模型或兼容接口应以应用内检测结果为准。
+- ForTest 调用 Jenkins、文档平台和模型服务时，仍受外部服务权限、网络、证书和配额限制。
+- 自动生成的测试用例用于辅助分析，发布或执行前仍应由测试人员结合真实需求复核。
 
 ## 目录说明
 
-- `windows_native/`：当前 ForTest 原生 Qt 桌面端、测试、打包及安装器脚本。
-- `backend/`、`services/`、`utils/`：原生桌面端复用的业务核心。
-- `tests/`：业务核心回归测试。
-- `docs/`：面向开源维护者的长期文档；开发计划、验收记录和一次性交付报告不纳入 Git。
+| 路径 | 说明 |
+| --- | --- |
+| `windows_native/` | 原生 Qt 桌面端、Jenkins 模块、界面组件、运行时管理、测试、PyInstaller 配置和 Inno Setup 安装器脚本。 |
+| `backend/` | AI 配置、提示词、生成流程、设置模型与安全校验等共享业务核心。 |
+| `services/` | 文档 MCP、表格输出和需求文档处理等外部服务适配。 |
+| `utils/` | Excel 写入、默认模板加载等通用工具。 |
+| `tests/` | 共享业务核心的单元、集成、安全和回归测试。 |
+| `windows_native/tests/` | 原生桌面端、Jenkins、任务调度、启动流程和离屏 UI 测试。 |
+| `windows_native/assets/` | 应用图标及可合法分发的内置模板。 |
+| `png/` | README 使用的脱敏界面预览图。 |
+| `.github/` | Issue/PR 模板与 Windows CI 工作流。 |
+| `docs/` | 面向维护者长期有效的安全、隐私和源码发布规范。 |
+| `scripts/` | 数据迁移等维护脚本。 |
 
-本机可在受忽略的 `预删除/` 中保留退役代码和过程记录的恢复副本。Codex 或其他开发助手的临时工作优先写入 `.codex-work/`；`docs/plans/`、`docs/validation/` 和 `windows_native/DELIVERY*.md` 也已显式屏蔽，避免过程材料误入提交。
+构建产物、虚拟环境、用户配置、日志、一次性验收记录和开发助手临时文件均被 Git 忽略，不属于公开源码交付内容。
 
-## 开发与验证
+## 开发、测试与打包
+
+在 64 位 Windows PowerShell 中执行完整构建：
 
 ```powershell
-# 业务核心回归
-windows_native\.build-venv\Scripts\python.exe -m pytest tests -q
-
-# 原生端回归（首次完整构建后会生成隔离环境）
-windows_native\.build-venv\Scripts\python.exe -m pytest windows_native\tests -q
-
-# 生成 Windows x64 程序与安装包
 powershell -ExecutionPolicy Bypass -File windows_native\build.ps1
 ```
 
-完整构建会自动验证原生端和业务核心，检查源码/产物隐私与 PE 架构，并对打包后的程序执行
-无端口启动诊断。安装包输出到 `windows_native/dist/installer/`。
+构建脚本会创建隔离环境并依次完成：
 
-运行时配置、任务记录、日志和生成文件保存在 `%LOCALAPPDATA%\ForTest\UserData`，
-不写入源码目录，也不纳入 Git。
+1. 源码隐私门禁；
+2. 原生桌面端及离屏 UI 测试；
+3. 共享业务核心回归测试；
+4. Windows x64 程序打包与 PE 架构检查；
+5. 产物隐私门禁和打包后启动诊断；
+6. Inno Setup 安装包生成。
+
+最终安装包位于 `windows_native/dist/installer/`。运行时数据、安装包内容和公开仓库的隐私边界参见 [`docs/security/package-privacy.md`](docs/security/package-privacy.md)。
 
 ## 源码公开与协作
 
-- 问题与建议：使用仓库的 GitHub Issues，并在提交前移除隐私数据。
-- 代码贡献：参见 [`CONTRIBUTING.md`](CONTRIBUTING.md) 和
-  [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。
-- 安全漏洞：请按 [`SECURITY.md`](SECURITY.md) 使用 GitHub 私密报告入口，不要公开披露。
-- 自动验证：推送和 Pull Request 会在 Windows 环境运行源码隐私门禁及两组回归测试。
+ForTest 欢迎在明确边界内参与改进：
 
-ForTest 按 [PolyForm Noncommercial License 1.0.0](LICENSE) 公开源码：允许个人学习、
-研究、测试及其他非商业用途，也允许在相同非商业边界内修改和分发。任何商业用途均须
-事先取得 `wiksongkim-arch` 的单独书面许可。因此本项目属于 **source-available（源码公开）**，
-不是 OSI 定义的开源软件。
+- 使用 [GitHub Issues](https://github.com/wiksongkim-arch/ForTest/issues) 报告可复现的问题或提出建议；请勿附带真实凭据、私有文档或内部服务地址。
+- 提交代码前请阅读 [`CONTRIBUTING.md`](CONTRIBUTING.md) 和 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)，保持改动聚焦，并补充相应测试与多语言文案。
+- 安全漏洞请按 [`SECURITY.md`](SECURITY.md) 提供的私密渠道报告，不要先在公开 Issue 中披露。
+- Pull Request 和 `main` 分支推送会在 Windows 环境执行隐私门禁及两组回归测试。
+
+本项目依据 [PolyForm Noncommercial License 1.0.0](LICENSE) 公开源码，允许个人学习、研究、测试及其他非商业用途，也允许在相同非商业边界内修改和分发。任何商业使用、商业集成或以商业目的再分发，均须事先取得 `wiksongkim-arch` 的单独书面许可。第三方依赖、字体、图标和模板仍分别受其自身许可约束。
+
+因此，ForTest 属于 **source-available（源码公开）** 项目，而不是 OSI 定义的开源软件。下载、使用或分发前，请以仓库中的完整 [`LICENSE`](LICENSE) 文本为准。
