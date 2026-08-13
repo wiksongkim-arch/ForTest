@@ -36,6 +36,9 @@ jobs:
             windows_native/requirements-build.txt
             windows_native/requirements-runtime.txt
 
+      - name: Enable Git long paths
+        run: git config --global core.longpaths true
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
