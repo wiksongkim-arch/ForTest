@@ -1,0 +1,53 @@
+# IDE、操作系统与本机助手状态
+.idea/
+.vscode/
+.codex/
+.codex-work/
+.p/
+.superpowers/
+.DS_Store
+Thumbs.db
+
+# Python、测试与覆盖率缓存
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+junit*.xml
+test-results/
+
+# 运行时用户数据与本地产物
+data/settings.json
+data/*.lock
+data/*.tmp
+logs/
+output/
+*.log
+windows_native/.build/
+windows_native/.build-venv/
+windows_native/dist/
+windows_native/final-validation/
+windows_native/.tools/
+预删除/
+
+# Codex/开发助手产生的计划、验收和一次性交付记录
+docs/plans/
+docs/validation/
+docs/reports/
+docs/superpowers/
+docs/security/open-source-privacy-audit-*.md
+windows_native/DELIVERY*.md
+
+# 本机环境文件
+.env
+.env.*
+!.env.example

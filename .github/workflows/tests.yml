@@ -1,0 +1,51 @@
+name: Windows tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  regression:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            windows_native/requirements-build.txt
+            windows_native/requirements-runtime.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r windows_native/requirements-build.txt -r requirements.txt
+
+      - name: Audit source privacy
+        run: python windows_native/package_privacy.py source --project-root .
+
+      - name: Run native desktop tests
+        run: python -m pytest windows_native/tests -q
+
+      - name: Run shared business tests
+        run: python -m pytest tests -q
