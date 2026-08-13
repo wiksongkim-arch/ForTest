@@ -83,8 +83,11 @@ jobs:
           LNAME: ForTestBuildUser
           USERNAME: ForTestBuildUser
           PGPASSWORD: ""
+          USERPROFILE: '${{ runner.temp }}\ForTestBuildHome'
         shell: pwsh
-        run: ./windows_native/build.ps1 -Clean
+        run: |
+          New-Item -ItemType Directory -Path $env:USERPROFILE -Force | Out-Null
+          ./windows_native/build.ps1 -Clean
 
       - name: Prepare release assets and notes
         shell: pwsh
