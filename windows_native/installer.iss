@@ -1,6 +1,6 @@
-; ForTest 0.2.12 纯原生 Windows x64 安装器。
+; ForTest 0.2.13 纯原生 Windows x64 安装器。
 #ifndef MyAppVersion
-  #define MyAppVersion "0.2.12"
+  #define MyAppVersion "0.2.13"
 #endif
 
 #define MyAppName "ForTest"

@@ -247,6 +247,10 @@ class AIConfigurationDialog(QDialog):
             self.name.setText(str(spec.get("label") or ""))
             self._set_model_text(str(spec.get("default_model") or ""))
             self.base_url.setText(str(spec.get("base_url") or ""))
+            # Codex high-reasoning stages commonly exceed five minutes.  Keep
+            # the established 900-second Codex default while cloud providers
+            # retain their shorter generic default.
+            self.timeout.setValue(900 if is_codex else 300)
             self.vision.setChecked(bool(spec.get("vision_enabled")))
             _set_combo(
                 self.response_format,

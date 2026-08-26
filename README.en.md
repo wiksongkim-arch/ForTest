@@ -60,7 +60,7 @@ This roadmap describes the current direction of exploration and is not a commitm
 
 ### Installation and First Use
 
-1. Open [GitHub Releases](https://github.com/wiksongkim-arch/ForTest/releases/latest) and download `ForTest-Windows-x64-Setup-0.2.12.exe`.
+1. Open [GitHub Releases](https://github.com/wiksongkim-arch/ForTest/releases/latest) and download `ForTest-Windows-x64-Setup-0.2.13.exe`.
 2. Compare the file against the SHA-256 value on the Release page, then run the installer. ForTest installs to the current user's directory by default and does not require administrator privileges.
 3. Start ForTest and complete the required setup shown on the home screen:
    - Quick Deploy: enter the Jenkins URL, username, and API Token, then test the connection.

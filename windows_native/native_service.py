@@ -447,6 +447,10 @@ class NativeService:
         payload.setdefault("base_url", spec.base_url)
         payload.setdefault("vision_enabled", spec.vision_enabled)
         payload.setdefault("response_format_mode", spec.response_format_mode.value)
+        payload.setdefault(
+            "timeout_seconds",
+            900 if provider == AIConfigurationProvider.codex else 300,
+        )
         configuration = AIConfiguration.model_validate(payload)
 
         if (

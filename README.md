@@ -60,7 +60,7 @@ ForTest 是一款使用 Codex 参与开发、面向软件测试工程师的 Wind
 
 ### 安装与首次使用
 
-1. 打开 [GitHub Releases](https://github.com/wiksongkim-arch/ForTest/releases/latest)，下载 `ForTest-Windows-x64-Setup-0.2.12.exe`。
+1. 打开 [GitHub Releases](https://github.com/wiksongkim-arch/ForTest/releases/latest)，下载 `ForTest-Windows-x64-Setup-0.2.13.exe`。
 2. 对照 Release 页面提供的 SHA-256 校验值确认文件完整性，然后运行安装程序。ForTest 默认安装到当前用户目录，不要求管理员权限。
 3. 启动 ForTest，根据首页配置状态完成必要设置：
    - 快捷部署：填写 Jenkins 地址、用户名与 API Token，并检测连接。

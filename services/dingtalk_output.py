@@ -39,6 +39,7 @@ _WINDOWS_RESERVED = {
 _FORMULA_AFTER_PREFIX = re.compile(
     r"^[\s\x00-\x1f\x7f-\x9f]*[=+\-@]"
 )
+_DINGTALK_LITERAL_TRANSLATION = str.maketrans({"\uffe5": "\u00a5"})
 _OUTPUT_CLEAR_RANGE = "A:Z"
 
 
@@ -83,7 +84,12 @@ class DingTalkOutputWriter:
         output_folder_url: str,
         excel_writer_factory: Callable[[], ExcelWriter] = ExcelWriter,
         poll_interval_seconds: float = 1.0,
-        poll_timeout_seconds: float = 30.0,
+        # Large CSV imports are applied asynchronously by DingTalk.  In
+        # production a 1,073-row write was correct on readback, but became
+        # visible only after the former 300-second window expired.
+        # Keep polling bounded while allowing normal large generations to
+        # reach their consistent state.
+        poll_timeout_seconds: float = 600.0,
         lock_dir: Path = Path("data"),
     ) -> None:
         self.document_service = document_service
@@ -238,10 +244,14 @@ class DingTalkOutputWriter:
                 f"钉钉已有输出重新验收失败（{type(exc).__name__}）",
             ) from None
 
-        safe_cases = [
+        # CSV readback exposes displayed values and may omit the apostrophe
+        # that protected a formula-like literal on import.  Normalize again
+        # before creating an XLSX backup so recovery cannot reintroduce a
+        # spreadsheet formula locally.
+        safe_cases = self._normalize_cases([
             dict(zip(TEST_CASE_FIELDS, row))
             for row in rows[1:]
-        ]
+        ])
         try:
             title = self.document_service.get_document_name(node_id)
             safe_title = self._safe_output_title(title)
@@ -395,6 +405,11 @@ class DingTalkOutputWriter:
                         "测试用例字段值格式无效",
                     )
                 text = text.replace("\r\n", "\n").replace("\r", "\n")
+                # DingTalk's spreadsheet engine compatibility-folds U+FFE5
+                # to U+00A5 on every write path.  Canonicalize before both
+                # remote and local output so verification and backups retain
+                # one deterministic literal representation.
+                text = text.translate(_DINGTALK_LITERAL_TRANSLATION)
                 row[field] = cls._neutralize_formula(text)
             normalized.append(row)
         return normalized
@@ -450,8 +465,27 @@ class DingTalkOutputWriter:
             raise RuntimeError("回读行数不匹配")
         if any(len(row) != len(CASE_COLUMNS) for row in actual_rows):
             raise RuntimeError("回读列数不匹配")
-        if actual_rows != expected_rows:
+        if any(
+            not DingTalkOutputWriter._readback_cells_equal(expected, actual)
+            for expected_row, actual_row in zip(expected_rows, actual_rows)
+            for expected, actual in zip(expected_row, actual_row)
+        ):
             raise RuntimeError("回读单元格内容不匹配")
+
+    @staticmethod
+    def _readback_cells_equal(expected: str, actual: str) -> bool:
+        if expected == actual:
+            return True
+        # DingTalk protects an imported formula-like literal but omits the
+        # leading safety apostrophe when exporting its displayed CSV value.
+        # Accept only that exact, narrowly-scoped representation change.  A
+        # genuinely evaluated formula would return its result instead of the
+        # original sigil-prefixed text and therefore still fail verification.
+        return (
+            expected.startswith("'")
+            and _FORMULA_AFTER_PREFIX.match(expected[1:]) is not None
+            and actual == expected[1:]
+        )
 
     @staticmethod
     def _verify_readback_shape(

@@ -66,6 +66,7 @@ def test_native_codex_save_ignores_api_key_and_clears_legacy_secret(tmp_path):
     assert item["complete"] is True
     assert "secret_status" not in item
     assert "use_dedicated_api_key" not in item
+    assert item["timeout_seconds"] == 900
     assert secrets.get(ai_configuration_secret_name(configuration_id)) is None
     assert native.codex_runtimes.installed == ["bundled"]
 

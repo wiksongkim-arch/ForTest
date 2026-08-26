@@ -14,6 +14,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+from pydantic import TypeAdapter, ValidationError
+
 from openai_codex import (
     AsyncCodex,
     CodexConfig,
@@ -46,6 +48,7 @@ from backend.ai.types import (
     COMPONENT_OUTPUT_SCHEMA,
     SECTION_OUTPUT_SCHEMA,
     SectionAIRequest,
+    StageEvidence,
 )
 from backend.settings.defaults import default_settings
 from backend.settings.models import CodexRuntime, CodexSettings
@@ -537,6 +540,54 @@ class CodexSDKBoundaryTests(unittest.TestCase):
 
                 self.assertEqual(result.runtime_mode, "cli")
                 runner.assert_called_once()
+
+    def test_new_runtime_thread_response_enum_falls_back_to_cli(self):
+        try:
+            TypeAdapter(int).validate_python("max")
+        except ValidationError as exc:
+            response_validation_error = exc
+        else:  # pragma: no cover - pydantic always rejects this value
+            self.fail("expected a response validation error")
+
+        sdk = fake_codex_sdk()
+        sdk.thread_start = AsyncMock(side_effect=response_validation_error)
+        provider = self.make_provider(
+            CodexSettings(runtime=CodexRuntime.auto),
+            sdk_factory=lambda: sdk,
+        )
+        cli_evidence = StageEvidence(
+            stage="component_matching",
+            provider=provider.name,
+            runtime_mode="cli",
+            model="gpt-5.4",
+            duration_ms=1,
+            retry_count=0,
+            output_valid=True,
+        )
+        schema = {
+            "type": "object",
+            "properties": {"ok": {"type": "string"}},
+            "required": ["ok"],
+            "additionalProperties": False,
+        }
+
+        with patch.object(
+            provider,
+            "_run_cli_structured_stage",
+            return_value=({"ok": "yes"}, cli_evidence),
+        ) as cli_stage:
+            data, evidence = provider.run_structured_stage(
+                "component_matching",
+                "Return JSON.",
+                "Set ok to yes.",
+                schema,
+            )
+
+        self.assertEqual(data, {"ok": "yes"})
+        self.assertEqual(evidence.runtime_mode, "cli")
+        self.assertEqual(provider.selected_runtime, "cli")
+        cli_stage.assert_called_once()
+        sdk.close.assert_awaited_once()
 
     def test_unclassified_account_and_invalid_params_do_not_call_cli(self):
         account_sdk = fake_codex_sdk()

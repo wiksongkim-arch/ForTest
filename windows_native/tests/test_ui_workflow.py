@@ -1386,7 +1386,7 @@ def test_window_branding_is_compact_and_language_switches_immediately(workflow):
     window, _service, _manager, _theme = workflow
     assert window.windowTitle() == "ForTest"
     assert not window.findChildren(QLabel, "brandIcon")
-    assert any(label.text() == "ForTest v0.2.12" for label in window.findChildren(QLabel))
+    assert any(label.text() == "ForTest v0.2.13" for label in window.findChildren(QLabel))
 
     window.change_language("en_US")
     assert [window.nav_group.button(index).text() for index in range(4)] == [
@@ -1739,6 +1739,12 @@ def test_codex_dialog_uses_required_field_order_and_refreshable_model_combo(
     ]
     assert dialog.model_refresh.text() == "刷新模型"
     assert dialog.cli_path.text().endswith("codex.exe")
+    assert dialog.timeout.value() == 900
+
+    dialog.provider.setCurrentIndex(dialog.provider.findData("openai"))
+    assert dialog.timeout.value() == 300
+    dialog.provider.setCurrentIndex(dialog.provider.findData("codex"))
+    assert dialog.timeout.value() == 900
 
     dialog.apply_model_catalog(service.get_codex_configuration_models({}))
     assert dialog.model.findData("gpt-5.6-sol") >= 0

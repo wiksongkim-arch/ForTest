@@ -5,6 +5,7 @@
 当前长期文档：
 
 - [`security/package-privacy.md`](security/package-privacy.md)：运行时数据、安装包隐私门禁和公开仓库边界。
+- [`source-publication-standard.md`](source-publication-standard.md)：源码公开、GitHub 推送、Windows CI 回归和发布验收的可复用执行标准。
 
 以下内容属于本机开发过程材料，不进入 Git：
 

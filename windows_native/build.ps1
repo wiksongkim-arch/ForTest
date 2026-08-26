@@ -21,7 +21,7 @@ $versionMatch = [regex]::Match(
     '^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)$'
 )
 if (-not $versionMatch.Success) {
-    throw "VERSION 必须由三个整数段组成，例如 0.2.12；当前值：$version"
+    throw "VERSION 必须由三个整数段组成，例如 0.2.13；当前值：$version"
 }
 $versionMajor = [int]$versionMatch.Groups['major'].Value
 $versionMinor = [int]$versionMatch.Groups['minor'].Value
@@ -56,7 +56,7 @@ function Remove-SafeTree {
 
 function Write-VersionResource {
     param([Parameter(Mandatory = $true)][string]$TargetPath)
-    # Windows 版本资源使用整数元组，因此 0.2.12 会被准确写成 (0, 2, 12, 0)。
+    # Windows 版本资源使用整数元组，因此 0.2.13 会被准确写成 (0, 2, 13, 0)。
     $resource = @"
 # UTF-8
 # 此文件由 build.ps1 根据 VERSION 自动生成，请勿单独修改版本号。

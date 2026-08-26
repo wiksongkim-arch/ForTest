@@ -89,6 +89,20 @@ class DingTalkOutputTests(unittest.TestCase):
         values.update(overrides)
         return DingTalkOutputWriter(**values), local
 
+    def test_default_poll_window_allows_large_remote_imports_to_settle(self):
+        writer = DingTalkOutputWriter(
+            document_service=Mock(),
+            spreadsheet_service=Mock(),
+            document_template_url=(
+                "https://alidocs.dingtalk.com/i/nodes/template-node"
+            ),
+            output_folder_url=(
+                "https://alidocs.dingtalk.com/i/nodes/folder-node"
+            ),
+        )
+
+        self.assertEqual(writer.poll_timeout_seconds, 600.0)
+
     def test_columns_are_the_single_approved_eleven_column_contract(self):
         self.assertEqual(
             CASE_COLUMNS,
@@ -495,6 +509,74 @@ class DingTalkOutputTests(unittest.TestCase):
         self.assertEqual(remote_case[8], "'@SUM(A1:A2)")
         self.assertEqual(local_case["case_name"], remote_case[1])
         self.assertEqual(local_case["remark"], remote_case[8])
+
+    def test_readback_accepts_dingtalk_display_value_without_safety_apostrophe(self):
+        def displayed_csv(csv_text):
+            rows = list(csv.reader(io.StringIO(csv_text)))
+            rows[1][1] = rows[1][1][1:]
+            output = io.StringIO(newline="")
+            csv.writer(output, lineterminator="\r\n").writerows(rows)
+            return output.getvalue()
+
+        document = Mock()
+        configure_confirmed_copy(document)
+        sheets = EchoSpreadsheetService(readback=displayed_csv)
+        writer, _local = self.writer(document, sheets)
+
+        result = writer.write(
+            "需求",
+            [make_case(case_name="=1+1")],
+            self.root / "out",
+        )
+
+        self.assertFalse(result.partial_failure)
+
+    def test_readback_still_rejects_missing_apostrophe_for_non_formula_text(self):
+        expected = [list(CASE_COLUMNS), ["'plain", *("value" for _ in range(10))]]
+        actual = io.StringIO(newline="")
+        csv.writer(actual, lineterminator="\r\n").writerows(
+            [list(CASE_COLUMNS), ["plain", *("value" for _ in range(10))]]
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "回读单元格内容不匹配"):
+            DingTalkOutputWriter._verify_readback(actual.getvalue(), expected)
+
+    def test_dingtalk_compatibility_sign_is_canonicalized_remotely_and_locally(self):
+        document = Mock()
+        configure_confirmed_copy(document)
+        sheets = EchoSpreadsheetService()
+        writer, local = self.writer(document, sheets)
+
+        result = writer.write(
+            "需求",
+            [make_case(test_steps="输入特殊字符￥")],
+            self.root / "out",
+        )
+
+        self.assertFalse(result.partial_failure)
+        remote = list(csv.reader(io.StringIO(sheets.csv_text)))[1][3]
+        local_case = local.add_test_cases.call_args.args[0][0]
+        self.assertEqual(remote, "输入特殊字符¥")
+        self.assertEqual(local_case["test_steps"], remote)
+
+    def test_recovery_restores_formula_safety_prefix_before_local_backup(self):
+        document = Mock()
+        document.get_document_name.return_value = "恢复用例"
+        displayed = io.StringIO(newline="")
+        csv.writer(displayed, lineterminator="\r\n").writerows(
+            [
+                list(CASE_COLUMNS),
+                ["value", "=1+1", *("value" for _ in range(9))],
+            ]
+        )
+        sheets = EchoSpreadsheetService(readback=displayed.getvalue())
+        writer, local = self.writer(document, sheets)
+
+        result = writer.recover_existing("existing-node", 1, self.root / "out")
+
+        recovered = local.add_test_cases.call_args.args[0][0]
+        self.assertEqual(recovered["case_name"], "'=1+1")
+        self.assertEqual(result.node_id, "existing-node")
 
     def test_all_formula_sigils_and_leading_whitespace_are_safe_in_csv_and_xlsx(self):
         dangerous = [

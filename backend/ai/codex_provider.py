@@ -142,6 +142,13 @@ def is_sdk_launch_error(exc: BaseException, phase: str) -> bool:
         return False
     if isinstance(exc, (InvalidParamsError, MethodNotFoundError)):
         return False
+    # The managed Codex runtime can add response enum values before the
+    # pinned Python SDK publishes matching models.  A validation failure
+    # before the first usable turn is therefore a protocol compatibility
+    # failure, not a bad model response, and auto mode should use the same
+    # runtime through its stable CLI interface.
+    if isinstance(exc, ValidationError):
+        return phase in {"account", "thread_start", "first_turn_start"}
     if isinstance(
         exc,
         (ImportError, FileNotFoundError, PermissionError, OSError),

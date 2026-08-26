@@ -51,7 +51,7 @@ def test_smoke_test_skips_user_instance_lock_and_uses_isolated_data(tmp_path):
     diagnostics_root = Path(payload["data_root"])
     assert payload["diagnostics_isolated"] is True
     assert payload["product"] == "ForTest"
-    assert payload["version"] == "0.2.12"
+    assert payload["version"] == "0.2.13"
     assert payload["backend_runtime_loaded"] is False
     assert payload["codex_runtime_loaded"] is False
     assert payload["first_paint_seconds"] < 3.0

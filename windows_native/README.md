@@ -6,8 +6,8 @@ FastAPI、Uvicorn、Streamlit、WebView，也不监听本地端口。
 
 ## 当前版本
 
-- 版本号：`0.2.12`
-- 后续每次发布固定在前一版本基础上递增 `0.0.1`，例如 `0.2.10`、`0.2.11`、`0.2.12`
+- 版本号：`0.2.13`
+- 后续每次发布固定在前一版本基础上递增 `0.0.1`，例如 `0.2.11`、`0.2.12`、`0.2.13`
 - 外观模式：跟随系统、浅色、深色
 - 任务模式：持久化任务列表与可配置的并行执行队列
 - 本地需求：支持 Markdown、TXT、DOCX、PDF、XLSX，并与在线文档共用生成流程
@@ -46,7 +46,7 @@ FastAPI、Uvicorn、Streamlit、WebView，也不监听本地端口。
 最终安装包位于：
 
 ```text
-windows_native\dist\installer\ForTest-Windows-x64-Setup-0.2.12.exe
+windows_native\dist\installer\ForTest-Windows-x64-Setup-0.2.13.exe
 ```
 
 构建生成的诊断、隐私审计和安装日志保存在本机 `windows_native/.build/`。
