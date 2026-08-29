@@ -13,6 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtCore import QObject, QPoint, QPointF, QThreadPool, Qt, Signal
 from PySide6.QtGui import QIcon, QWheelEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -1169,7 +1170,14 @@ def test_deployment_selector_cascades_environment_project_and_branch(app: QAppli
 
     node.environment.setCurrentIndex(node.environment.findData("test"))
     assert child.project.isEnabled() is True
-    assert child.project.count() == 3
+    assert child.project.count() == 2
+    assert child.project.isEditable() is True
+    assert child.project.lineEdit().placeholderText() == "选择项目，可输入名称搜索"
+    assert child.project.completer().caseSensitivity() == Qt.CaseInsensitive
+    assert child.project.completer().filterMode() == Qt.MatchContains
+    child.project.completer().setCompletionPrefix("DTM_PC")
+    assert child.project.completer().completionCount() == 1
+    assert "dtm_pc" in child.project.completer().currentCompletion()
     child.project.setCurrentIndex(
         next(
             index
@@ -1179,16 +1187,21 @@ def test_deployment_selector_cascades_environment_project_and_branch(app: QAppli
         )
     )
     assert child.branch.isEnabled() is True
-    assert [child.branch.itemData(index) for index in range(1, child.branch.count())] == [
-        "origin/master",
+    assert child.branch.isEditable() is True
+    assert child.branch.lineEdit().placeholderText() == "选择分支，可输入名称搜索"
+    assert [child.branch.itemData(index) for index in range(child.branch.count())] == [
         "origin/feature/a",
+        "origin/master",
     ]
 
-    child.branch.setCurrentIndex(2)
+    child.branch.completer().setCompletionPrefix("FEATURE")
+    assert child.branch.completer().completionCount() == 1
+    assert child.branch.completer().currentCompletion() == "origin/feature/a"
+    child.branch.setCurrentIndex(child.branch.findData("origin/master"))
     node.environment.setCurrentIndex(node.environment.findData("staging"))
-    assert child.project.currentIndex() == 0
-    assert child.branch.currentIndex() == 0
-    assert child.project.count() == 2
+    assert child.project.currentIndex() == -1
+    assert child.branch.currentIndex() == -1
+    assert child.project.count() == 1
     dialog.close()
 
 
@@ -1245,11 +1258,26 @@ def test_scheduled_deployment_controls_are_localized(app: QApplication):
     from windows_native.i18n import set_language
 
     expected = {
-        "zh_TW": (["間隔", "時刻"], " 分鐘"),
-        "en_US": (["Interval", "Time"], " min"),
+        "zh_TW": (
+            ["間隔", "時刻"],
+            " 分鐘",
+            "選擇專案，可輸入名稱搜尋",
+            "選擇分支，可輸入名稱搜尋",
+        ),
+        "en_US": (
+            ["Interval", "Time"],
+            " min",
+            "Select or search projects by name",
+            "Select or search branches by name",
+        ),
     }
     try:
-        for language, (labels, suffix) in expected.items():
+        for language, (
+            labels,
+            suffix,
+            project_hint,
+            branch_hint,
+        ) in expected.items():
             set_language(language)
             dialog = NewDeploymentDialog(
                 {"last_refreshed_at": "", "projects": []},
@@ -1260,6 +1288,9 @@ def test_scheduled_deployment_controls_are_localized(app: QApplication):
                 for index in range(dialog.schedule_mode.count())
             ] == labels
             assert dialog.schedule_interval.suffix() == suffix
+            row = dialog.environment_nodes[0].project_rows[0]
+            assert row.project.lineEdit().placeholderText() == project_hint
+            assert row.branch.lineEdit().placeholderText() == branch_hint
             dialog.close()
     finally:
         set_language("zh_CN")
@@ -1295,7 +1326,27 @@ def test_single_deployment_selector_only_returns_one_complete_selection(app: QAp
     assert not hasattr(dialog, "iteration_name")
     assert dialog.environment.findData("prod") == -1
     dialog.environment.setCurrentIndex(dialog.environment.findData("test"))
-    dialog.project.setCurrentIndex(1)
+    assert dialog.project.isEditable() is True
+    assert dialog.project.completer().filterMode() == Qt.MatchContains
+    dialog.project.setCurrentIndex(0)
+    dialog.branch.setCurrentIndex(0)
+    editor = dialog.project.lineEdit()
+    editor.setFocus()
+    editor.selectAll()
+    QTest.keyClicks(editor, "DTM_PC")
+    app.processEvents()
+    assert dialog.project.currentIndex() == -1
+    assert dialog.branch.currentIndex() == -1
+    dialog.project.completer().setCompletionPrefix("DTM_PC")
+    assert dialog.project.completer().completionCount() == 1
+    dialog.project.completer().activated[str].emit(
+        dialog.project.completer().currentCompletion()
+    )
+    app.processEvents()
+    assert dialog.project.currentData()["name"] == "dtm_pc"
+    assert dialog.branch.isEditable() is True
+    dialog.branch.completer().setCompletionPrefix("FEATURE")
+    assert dialog.branch.completer().completionCount() == 1
     dialog.branch.setCurrentIndex(dialog.branch.findData("origin/feature/a"))
 
     assert dialog.selections() == [

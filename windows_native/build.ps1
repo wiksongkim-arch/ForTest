@@ -254,13 +254,43 @@ if (-not $SkipTests) {
 
 Write-Step 'Building the pure native Windows x64 application'
 $pyinstallerWork = Join-Path $buildRoot 'pyinstaller'
-& $pythonExe -m PyInstaller `
-    --noconfirm `
-    --clean `
-    --distpath $distRoot `
-    --workpath $pyinstallerWork `
-    (Join-Path $nativeRoot 'ForTest.spec')
-if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
+$basePythonRoot = (& $pythonExe -c 'import sys; print(sys.base_prefix)').Trim()
+if ($LASTEXITCODE -ne 0 -or -not $basePythonRoot) {
+    throw 'Failed to resolve the base Python runtime.'
+}
+$isolatedBuildPath = @(
+    (Join-Path $venvRoot 'Scripts'),
+    $basePythonRoot,
+    (Join-Path $basePythonRoot 'Scripts'),
+    (Join-Path $env:SystemRoot 'System32'),
+    $env:SystemRoot,
+    (Join-Path $env:SystemRoot 'System32\Wbem'),
+    (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0')
+) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
+$previousBuildPath = $env:PATH
+try {
+    # 只在打包阶段隔离 PATH，避免宿主工具链中的同名 ICU/OpenSSL DLL 被误收集。
+    $env:PATH = $isolatedBuildPath -join [System.IO.Path]::PathSeparator
+    & $pythonExe -m PyInstaller `
+        --noconfirm `
+        --clean `
+        --distpath $distRoot `
+        --workpath $pyinstallerWork `
+        (Join-Path $nativeRoot 'ForTest.spec')
+    if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
+}
+finally {
+    $env:PATH = $previousBuildPath
+}
+
+$analysisToc = Join-Path $pyinstallerWork 'ForTest\Analysis-00.toc'
+if (
+    -not (Test-Path -LiteralPath $analysisToc) -or
+    (Select-String -LiteralPath $analysisToc -SimpleMatch 'codex-runtimes' -Quiet)
+) {
+    # 分析清单必须存在，且绝不能引用 Codex 主机自带的工作区依赖。
+    throw 'PyInstaller dependency isolation check failed.'
+}
 
 $packagedExe = Join-Path $distRoot 'ForTest\ForTest.exe'
 if (-not (Test-Path -LiteralPath $packagedExe)) {

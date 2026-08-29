@@ -8,6 +8,7 @@ from typing import Any
 
 from PySide6.QtCore import QDateTime, QTime, Qt
 from PySide6.QtWidgets import (
+    QCompleter,
     QDialog,
     QDateTimeEdit,
     QDialogButtonBox,
@@ -36,6 +37,40 @@ SCHEDULE_CONTROL_HEIGHT = 40
 DEPLOYMENT_DIALOG_WIDTH = 1040
 
 
+def _configure_searchable_combo(combo: SmoothComboBox, placeholder: str) -> None:
+    """让部署选项支持不改写目录数据的大小写无关包含搜索。"""
+
+    combo.setEditable(True)
+    combo.setInsertPolicy(SmoothComboBox.NoInsert)
+    editor = combo.lineEdit()
+    if editor is not None:
+        editor.setPlaceholderText(placeholder)
+        editor.setClearButtonEnabled(True)
+
+        def invalidate_typed_selection(text: str) -> None:
+            # 用户开始搜索时立即撤销旧选项，避免未选中搜索结果却提交旧数据。
+            index = combo.currentIndex()
+            if index >= 0 and combo.itemText(index) != text:
+                combo.setCurrentIndex(-1)
+                editor.setText(text)
+
+        editor.textEdited.connect(invalidate_typed_selection)
+
+    completer = combo.completer()
+    if completer is not None:
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+
+        def select_completion(text: str) -> None:
+            # 只接受目录中的完整选项，禁止把任意输入当成项目或分支提交。
+            index = combo.findText(str(text), Qt.MatchFlag.MatchExactly)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+
+        completer.activated[str].connect(select_completion)
+
+
 def format_schedule_range(start: datetime, end: datetime) -> str:
     """使用与日期时间选择器一致的格式展示完整定时范围。"""
 
@@ -57,7 +92,10 @@ def deployment_catalog(
         if not full_name:
             continue
         description = str(project.get("description") or "").strip()
-        branches = _unique(project.get("target_branches") or [])
+        branches = sorted(
+            _unique(project.get("target_branches") or []),
+            key=_name_sort_key,
+        )
         if not branches:
             continue
         option = {
@@ -76,8 +114,8 @@ def deployment_catalog(
                 continue
             grouped.setdefault(environment, []).append(dict(option))
     for projects in grouped.values():
-        projects.sort(key=lambda item: str(item["full_name"]).casefold())
-    return dict(sorted(grouped.items(), key=lambda item: item[0].casefold()))
+        projects.sort(key=lambda item: _name_sort_key(item["full_name"]))
+    return dict(sorted(grouped.items(), key=lambda item: _name_sort_key(item[0])))
 
 
 def _unique(values) -> list[str]:
@@ -87,6 +125,13 @@ def _unique(values) -> list[str]:
         if normalized and normalized not in result:
             result.append(normalized)
     return result
+
+
+def _name_sort_key(value: Any) -> tuple[str, str]:
+    """提供大小写无关且结果稳定的名称排序键。"""
+
+    text = str(value)
+    return text.casefold(), text
 
 
 class ScheduleRangeDialog(QDialog):
@@ -198,10 +243,16 @@ class ProjectBranchRow(QWidget):
         layout.setContentsMargins(34, 4, 0, 4)
         layout.setSpacing(8)
         self.project = SmoothComboBox()
-        self.project.addItem(tr("选择项目"), "")
+        _configure_searchable_combo(
+            self.project,
+            tr("选择项目，可输入名称搜索"),
+        )
         self.project.setEnabled(False)
         self.branch = SmoothComboBox()
-        self.branch.addItem(tr("选择分支"), "")
+        _configure_searchable_combo(
+            self.branch,
+            tr("选择分支，可输入名称搜索"),
+        )
         self.branch.setEnabled(False)
         self.add_button = QPushButton("+")
         self.remove_button = QPushButton("−")
@@ -218,22 +269,20 @@ class ProjectBranchRow(QWidget):
 
     def set_projects(self, projects: list[dict[str, Any]]) -> None:
         self.project.clear()
-        self.project.addItem(tr("选择项目"), "")
         for item in projects:
             self.project.addItem(str(item["label"]), item)
-        self.project.setCurrentIndex(0)
+        self.project.setCurrentIndex(-1)
         self.project.setEnabled(bool(projects))
         self._project_changed()
 
     def _project_changed(self) -> None:
         selected = self.project.currentData()
         self.branch.clear()
-        self.branch.addItem(tr("选择分支"), "")
         if isinstance(selected, dict):
             for branch in selected.get("branches") or []:
                 self.branch.addItem(str(branch), str(branch))
-        self.branch.setCurrentIndex(0)
-        self.branch.setEnabled(isinstance(selected, dict) and self.branch.count() > 1)
+        self.branch.setCurrentIndex(-1)
+        self.branch.setEnabled(isinstance(selected, dict) and self.branch.count() > 0)
 
     def selection(self, environment: str) -> dict[str, str]:
         project = self.project.currentData()
@@ -600,8 +649,16 @@ class SingleDeploymentDialog(QDialog):
         self.environment.setAccessibleName(tr("环境"))
         self.project = SmoothComboBox()
         self.project.setAccessibleName(tr("项目"))
+        _configure_searchable_combo(
+            self.project,
+            tr("选择项目，可输入名称搜索"),
+        )
         self.branch = SmoothComboBox()
         self.branch.setAccessibleName(tr("分支"))
+        _configure_searchable_combo(
+            self.branch,
+            tr("选择分支，可输入名称搜索"),
+        )
         selector.addWidget(self.environment, 2)
         selector.addWidget(self.project, 5)
         selector.addWidget(self.branch, 3)
@@ -649,22 +706,20 @@ class SingleDeploymentDialog(QDialog):
         environment = str(self.environment.currentData() or "")
         catalog = deployment_catalog(self._snapshot, show_prod=self._show_prod)
         self.project.clear()
-        self.project.addItem(tr("选择项目"), "")
         for item in catalog.get(environment, []):
             self.project.addItem(str(item["label"]), item)
-        self.project.setCurrentIndex(0)
-        self.project.setEnabled(self.project.count() > 1)
+        self.project.setCurrentIndex(-1)
+        self.project.setEnabled(self.project.count() > 0)
         self._project_changed()
 
     def _project_changed(self) -> None:
         project = self.project.currentData()
         self.branch.clear()
-        self.branch.addItem(tr("选择分支"), "")
         if isinstance(project, dict):
             for branch in project.get("branches") or []:
                 self.branch.addItem(str(branch), str(branch))
-        self.branch.setCurrentIndex(0)
-        self.branch.setEnabled(isinstance(project, dict) and self.branch.count() > 1)
+        self.branch.setCurrentIndex(-1)
+        self.branch.setEnabled(isinstance(project, dict) and self.branch.count() > 0)
 
     def selections(self) -> list[dict[str, str]]:
         project = self.project.currentData()

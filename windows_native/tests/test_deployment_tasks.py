@@ -48,6 +48,43 @@ def test_catalog_groups_by_environment_and_hides_prod_by_default():
     assert deployment_catalog(PROJECT_SNAPSHOT, show_prod=True)["prod"]
 
 
+def test_catalog_sorts_projects_and_branches_by_name():
+    """Jenkins 返回顺序变化时，选择目录仍按名称稳定展示。"""
+
+    snapshot = {
+        "projects": [
+            {
+                "full_name": "group/zulu",
+                "eligible": True,
+                "environments": ["test"],
+                "target_branches": [
+                    "origin/release",
+                    "origin/Alpha",
+                    "origin/feature",
+                ],
+            },
+            {
+                "full_name": "group/Alpha",
+                "eligible": True,
+                "environments": ["test"],
+                "target_branches": ["origin/main"],
+            },
+        ]
+    }
+
+    catalog = deployment_catalog(snapshot)
+
+    assert [item["full_name"] for item in catalog["test"]] == [
+        "group/Alpha",
+        "group/zulu",
+    ]
+    assert catalog["test"][1]["branches"] == [
+        "origin/Alpha",
+        "origin/feature",
+        "origin/release",
+    ]
+
+
 def test_task_creation_uses_timestamp_id_and_persists_full_plan(tmp_path):
     now = datetime(2026, 8, 8, 1, 2, 3, tzinfo=timezone.utc)
     repository = DeploymentTaskRepository(tmp_path, clock=lambda: now)
