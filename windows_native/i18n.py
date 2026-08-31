@@ -125,9 +125,12 @@ _ZH_TW = {
     "迭代部署任务列表": "迭代部署任務清單",
     "排队中": "排隊中",
     "定时等待": "定時等待",
+    "已保存": "已儲存",
     "进行中": "進行中",
     "停止中": "停止中",
     "重新部署": "重新部署",
+    "仅保存": "僅儲存",
+    "创建并部署": "建立並部署",
     "请先停止任务": "請先停止任務",
     "迭代部署详情 · {value}": "迭代部署詳情 · {value}",
     "部署进度：{current}/{total}": "部署進度：{current}/{total}",
@@ -480,9 +483,12 @@ _EN_US = {
     "迭代部署任务列表": "Iteration Deployment List",
     "排队中": "Queued",
     "定时等待": "Scheduled",
+    "已保存": "Saved",
     "进行中": "Running",
     "停止中": "Stopping",
     "重新部署": "Redeploy",
+    "仅保存": "Save Only",
+    "创建并部署": "Create & Deploy",
     "请先停止任务": "Stop the task first",
     "迭代部署详情 · {value}": "Deployment Details · {value}",
     "部署进度：{current}/{total}": "Deployment progress: {current}/{total}",
@@ -832,6 +838,18 @@ _ZH_TW.update(
         "稳定通道": "穩定通道",
         "测试通道": "測試通道",
         "更新通道": "更新通道",
+        "GitHub 更新链接": "GitHub 更新連結",
+        "可配置 GitHub 仓库链接；检查更新不会自动安装。": "可設定 GitHub 儲存庫連結；檢查更新不會自動安裝。",
+        "检查更新": "檢查更新",
+        "立即更新": "立即更新",
+        "正在检查更新…": "正在檢查更新…",
+        "发现新版本 v{version}": "發現新版本 v{version}",
+        "当前已是最新版本（v{version}）": "目前已是最新版本（v{version}）",
+        "检查更新失败：{message}": "檢查更新失敗：{message}",
+        "下载并安装 ForTest v{version}？安装程序启动后应用将退出。": "下載並安裝 ForTest v{version}？安裝程式啟動後應用程式將結束。",
+        "正在下载并校验 ForTest v{version}…": "正在下載並驗證 ForTest v{version}…",
+        "安装程序已启动，ForTest 即将退出。": "安裝程式已啟動，ForTest 即將結束。",
+        "立即更新失败：{message}": "立即更新失敗：{message}",
         "更新清单地址": "更新清單位址",
         "更新设置在下次启动应用时生效；地址留空时不会联网检查。": "更新設定會在下次啟動應用程式時生效；位址留空時不會連網檢查。",
         "保存更新设置": "儲存更新設定",
@@ -940,6 +958,18 @@ _EN_US.update(
         "稳定通道": "Stable Channel",
         "测试通道": "Beta Channel",
         "更新通道": "Update Channel",
+        "GitHub 更新链接": "GitHub Update Link",
+        "可配置 GitHub 仓库链接；检查更新不会自动安装。": "Configure a GitHub repository link. Checking never installs automatically.",
+        "检查更新": "Check for Updates",
+        "立即更新": "Update Now",
+        "正在检查更新…": "Checking for updates…",
+        "发现新版本 v{version}": "ForTest v{version} is available",
+        "当前已是最新版本（v{version}）": "ForTest is up to date (v{version})",
+        "检查更新失败：{message}": "Update check failed: {message}",
+        "下载并安装 ForTest v{version}？安装程序启动后应用将退出。": "Download and install ForTest v{version}? The app will exit after the installer starts.",
+        "正在下载并校验 ForTest v{version}…": "Downloading and verifying ForTest v{version}…",
+        "安装程序已启动，ForTest 即将退出。": "The installer has started. ForTest will now exit.",
+        "立即更新失败：{message}": "Update failed: {message}",
         "更新清单地址": "Update Manifest URL",
         "更新设置在下次启动应用时生效；地址留空时不会联网检查。": "Update settings take effect the next time the app starts; an empty URL disables network checks.",
         "保存更新设置": "Save Update Settings",
@@ -966,6 +996,8 @@ _EN_US.update(
 # 本地需求文档与默认模板迭代文案，显式维护英文语义，避免仅做字面替换。
 _ZH_TW.update(
     {
+        "链接模式每行输入一个需求文档地址；任务会按行序创建并开始。": "連結模式每行輸入一個需求文件位址；任務會依行序建立並開始。",
+        "每行输入一个需求文档链接，例如：https://alidocs.dingtalk.com/...": "每行輸入一個需求文件連結，例如：https://alidocs.dingtalk.com/...",
         "输入需求文档地址或选择文件。任务创建后会按配置的并行数量自动执行。": "輸入需求文件位址或選擇檔案。任務建立後會依設定的並行數量自動執行。",
         "需求文档": "需求文件",
         "链接": "連結",
@@ -987,6 +1019,8 @@ _ZH_TW.update(
 
 _EN_US.update(
     {
+        "链接模式每行输入一个需求文档地址；任务会按行序创建并开始。": "Enter one requirements document address per line. Tasks are created and started in line order.",
+        "每行输入一个需求文档链接，例如：https://alidocs.dingtalk.com/...": "One requirements document link per line, e.g. https://alidocs.dingtalk.com/...",
         "输入需求文档地址或选择文件。任务创建后会按配置的并行数量自动执行。": "Enter a requirements document address or select a file. The task will run automatically under the configured concurrency limit.",
         "需求文档": "Requirements Document",
         "链接": "Link",
@@ -1154,6 +1188,7 @@ def translate_widget_tree(root: Any) -> None:
             QGroupBox,
             QLabel,
             QLineEdit,
+            QPlainTextEdit,
             QTabWidget,
             QTableWidget,
             QWidget,
@@ -1177,7 +1212,7 @@ def translate_widget_tree(root: Any) -> None:
                     widget.setTitle(tr(source, **values))
                 else:
                     widget.setText(tr(source, **values))
-        if isinstance(widget, QLineEdit):
+        if isinstance(widget, (QLineEdit, QPlainTextEdit)):
             placeholder = widget.placeholderText()
             source = widget.property("i18n_placeholder") or _source_text(placeholder)
             if source in _ZH_TW or source in _EN_US:

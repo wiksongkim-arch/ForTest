@@ -175,8 +175,8 @@ class HomePage(BasePage):
         if dialog.exec() != QDialog.Accepted:
             return
         try:
-            self.task_manager.create_task(
-                dialog.document_source(),
+            self.task_manager.create_tasks(
+                dialog.document_sources(),
                 source_type=dialog.document_source_type(),
             )
         except Exception as exc:

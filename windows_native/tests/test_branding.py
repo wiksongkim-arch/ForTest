@@ -9,7 +9,7 @@ from pathlib import Path
 def test_brand_and_version_resources_are_consistent():
     root = Path(__file__).resolve().parents[1]
     version = (root / "VERSION").read_text(encoding="utf-8").strip()
-    assert version == "0.2.14"
+    assert version == "0.2.15"
     assert (root / "ForTest.spec").exists()
     assert not (root / "QAQ.spec").exists()
     assert not (root / "ForTester.spec").exists()
@@ -79,6 +79,6 @@ def test_runtime_product_metadata_is_centralized():
     main = (root / "main.py").read_text(encoding="utf-8")
     window = (root / "ui" / "main_window.py").read_text(encoding="utf-8")
     assert 'PRODUCT_NAME = "ForTest"' in product
-    assert 'PRODUCT_VERSION = "0.2.14"' in product
+    assert 'PRODUCT_VERSION = "0.2.15"' in product
     assert "setApplicationName(PRODUCT_NAME)" in main
     assert "setWindowTitle(PRODUCT_NAME)" in window

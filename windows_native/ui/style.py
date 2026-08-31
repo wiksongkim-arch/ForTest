@@ -369,6 +369,10 @@ QLabel#statusSuccess {
     color: $accent;
     font-weight: 800;
 }
+QLabel#statusIdle {
+    color: $muted;
+    font-weight: 800;
+}
 QLabel#statusFailed {
     color: $danger;
     font-weight: 800;

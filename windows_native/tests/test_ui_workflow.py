@@ -43,7 +43,7 @@ from windows_native.ui.deployment_dialog import (
     ScheduleRangeDialog,
     SingleDeploymentDialog,
 )
-from windows_native.ui.task_widgets import TaskDetailsDialog, TaskLogsDialog
+from windows_native.ui.task_widgets import StatusIndicator, TaskDetailsDialog, TaskLogsDialog
 from windows_native.ui.deployment_widgets import DeploymentLogsDialog
 
 
@@ -58,6 +58,14 @@ LIVE_TASK = {
     "logs": ["任务已启动"],
     "trashed": False,
 }
+
+
+def test_saved_status_indicator_is_neutral_and_idle(app: QApplication):
+    indicator = StatusIndicator("saved")
+
+    assert indicator.text() == "•"
+    assert indicator.objectName() == "statusIdle"
+    assert indicator.timer.isActive() is False
 
 TRASHED_TASK = {
     "id": "20260801010202",
@@ -88,8 +96,14 @@ class FakeService:
         self.update_preferences = {
             "enabled": True,
             "channel": "stable",
-            "manifest_url": "",
+            "manifest_url": "https://github.com/wiksongkim-arch/ForTest",
         }
+        self.update_result = {
+            "available": False,
+            "current_version": "0.2.15",
+            "version": "0.2.15",
+        }
+        self.installed_update = None
         self.application_preferences = {
             "start_with_windows": False,
             "close_behavior": "ask",
@@ -388,6 +402,16 @@ class FakeService:
         self.update_preferences = copy.deepcopy(values)
         return self.get_update_preferences()
 
+    def check_for_update(self) -> dict:
+        return copy.deepcopy(self.update_result)
+
+    def check_for_update_automatically(self) -> dict | None:
+        return None
+
+    def install_update(self, update: dict) -> str:
+        self.installed_update = copy.deepcopy(update)
+        return "C:/ForTest/updates/installer.exe"
+
     def get_application_preferences(self) -> dict:
         return copy.deepcopy(self.application_preferences)
 
@@ -527,12 +551,19 @@ class FakeDeploymentService:
         selections: list[dict],
         *,
         schedule: dict | None = None,
+        start_immediately: bool = True,
     ) -> dict:
         schedule = dict(schedule or {"enabled": False})
         task = {
             "task_id": "20260808010101",
             "iteration_name": name,
-            "status": "scheduled" if schedule.get("enabled") else "queued",
+            "status": (
+                "saved"
+                if not start_immediately
+                else "scheduled"
+                if schedule.get("enabled")
+                else "queued"
+            ),
             "progress_percent": 0,
             "duration_seconds": 0,
             "items": copy.deepcopy(selections),
@@ -571,8 +602,9 @@ class FakeDeploymentService:
         return copy.deepcopy(task)
 
     def retry_deployment_task(self, task_id: str) -> dict:
-        original = self.deployment_task(task_id)
-        return self.create_deployment_task(original["iteration_name"], original["items"])
+        task = next(item for item in self.deployment_tasks if item["task_id"] == task_id)
+        task["status"] = "queued"
+        return copy.deepcopy(task)
 
     def trash_deployment_task(self, task_id: str) -> dict:
         task = next(item for item in self.deployment_tasks if item["task_id"] == task_id)
@@ -732,13 +764,12 @@ def test_preloaded_window_consumes_snapshot_without_restarting_local_services(
 
 def test_sidebar_and_internal_routes(workflow, app: QApplication):
     window, _service, manager, _theme = workflow
-    assert [window.nav_group.button(index).text() for index in range(4)] == [
+    assert [window.nav_group.button(index).text() for index in range(3)] == [
         "快捷部署",
         "测试用例生成",
         "设置",
-        "外观",
     ]
-    assert len(window.nav_group.buttons()) == 4
+    assert len(window.nav_group.buttons()) == 3
     assert window.stack.currentWidget() is window.quick_deploy_page
     assert window.config_page not in window.nav_pages
     assert window.recycle_page not in window.nav_pages
@@ -1254,6 +1285,39 @@ def test_scheduled_deployment_controls_switch_input_and_limit_range(app: QApplic
     dialog.close()
 
 
+def test_new_deployment_dialog_can_save_without_starting(app: QApplication):
+    dialog = NewDeploymentDialog(
+        {
+            "last_refreshed_at": "2026-08-08T01:02:03+08:00",
+            "projects": [
+                {
+                    "full_name": "dtmzp/dtm_pc",
+                    "name": "dtm_pc",
+                    "description": "PC 前端",
+                    "eligible": True,
+                    "environments": ["test"],
+                    "target_branches": ["origin/master"],
+                }
+            ],
+        },
+        on_refresh=lambda: None,
+    )
+    assert dialog.save_button.text() == "仅保存"
+    assert dialog.create_button.text() == "创建并部署"
+
+    dialog.iteration_name.setText("保存草稿")
+    node = dialog.environment_nodes[0]
+    node.environment.setCurrentIndex(node.environment.findData("test"))
+    row = node.project_rows[0]
+    row.project.setCurrentIndex(0)
+    row.branch.setCurrentIndex(0)
+    dialog._validate_and_accept(False)
+
+    assert dialog.result() == QDialog.Accepted
+    assert dialog.start_immediately() is False
+    dialog.close()
+
+
 def test_scheduled_deployment_controls_are_localized(app: QApplication):
     from windows_native.i18n import set_language
 
@@ -1437,14 +1501,13 @@ def test_window_branding_is_compact_and_language_switches_immediately(workflow):
     window, _service, _manager, _theme = workflow
     assert window.windowTitle() == "ForTest"
     assert not window.findChildren(QLabel, "brandIcon")
-    assert any(label.text() == "ForTest v0.2.14" for label in window.findChildren(QLabel))
+    assert any(label.text() == "ForTest v0.2.15" for label in window.findChildren(QLabel))
 
     window.change_language("en_US")
-    assert [window.nav_group.button(index).text() for index in range(4)] == [
+    assert [window.nav_group.button(index).text() for index in range(3)] == [
         "Quick Deploy",
         "Test Case Generation",
         "Settings",
-        "Appearance",
     ]
     assert window.guide_button.text().endswith("Complete Setup")
     window.change_language("zh_CN")
@@ -1495,6 +1558,7 @@ def test_traditional_language_can_switch_away_without_restart(workflow):
     assert window.config_page.tabs.tabText(0) == "文件設定"
     assert window.config_page.prompt_page.tabs.tabText(0) == "圖片理解"
     assert window.settings_page.tabs.tabText(0) == "AI 設定"
+    assert window.settings_page.tabs.tabText(1) == "外觀"
     assert window.settings_page.ai_panel.add_button.text() == "新增設定"
     assert window.settings_page.other_panel.start_with_windows.text() == (
         "隨 Windows 開機啟動"
@@ -1515,6 +1579,7 @@ def test_traditional_language_can_switch_away_without_restart(workflow):
     assert window.config_page.tabs.tabText(0) == "Document"
     assert window.config_page.prompt_page.tabs.tabText(0) == "Image Understanding"
     assert window.settings_page.tabs.tabText(0) == "AI Settings"
+    assert window.settings_page.tabs.tabText(1) == "Appearance"
     assert window.settings_page.ai_panel.add_button.text() == "Add Configuration"
     assert window.settings_page.other_panel.start_with_windows.text() == (
         "Start with Windows"
@@ -1528,6 +1593,7 @@ def test_traditional_language_can_switch_away_without_restart(workflow):
     assert window.config_page.tabs.tabText(0) == "文档配置"
     assert window.config_page.prompt_page.tabs.tabText(0) == "图片理解"
     assert window.settings_page.tabs.tabText(0) == "AI 配置"
+    assert window.settings_page.tabs.tabText(1) == "外观"
     assert window.settings_page.ai_panel.add_button.text() == "新增配置"
     assert (
         window.config_page.document_page.document_mcp.placeholderText()
@@ -1682,7 +1748,7 @@ def test_settings_page_lists_orders_and_recycles_ai_configurations(
     assert [
         window.settings_page.tabs.tabText(index)
         for index in range(window.settings_page.tabs.count())
-    ] == ["AI 配置", "其他"]
+    ] == ["AI 配置", "外观", "其他"]
     assert panel.table.rowCount() == 2
     assert panel.table.rowHeight(0) >= 56
     assert panel.table.rowHeight(1) >= 56
@@ -1835,7 +1901,7 @@ def test_other_settings_loads_and_saves_native_application_preferences(
 ):
     window, service, _manager, _theme = workflow
     window.switch_page(2)
-    window.settings_page.tabs.setCurrentIndex(1)
+    window.settings_page.tabs.setCurrentIndex(2)
     _drain_workers(app)
     panel = window.settings_page.other_panel
 
@@ -1859,7 +1925,7 @@ def test_other_settings_only_loads_and_saves_native_update_preferences(
 ):
     window, service, _manager, _theme = workflow
     window.switch_page(2)
-    window.settings_page.tabs.setCurrentIndex(1)
+    window.settings_page.tabs.setCurrentIndex(2)
     _drain_workers(app)
     panel = window.settings_page.other_panel
 
@@ -1872,14 +1938,22 @@ def test_other_settings_only_loads_and_saves_native_update_preferences(
     panel.update_channel.setCurrentIndex(
         panel.update_channel.findData("beta")
     )
-    panel.update_manifest.setText("https://updates.example.test/manifest.json")
+    assert panel.update_check_button.text() == "检查更新"
+    assert panel.update_install_button.text() == "立即更新"
+    assert panel.update_install_button.isEnabled() is False
+    panel.update_manifest.setText("https://github.com/example/fortest")
     panel.save_update_preferences()
     _drain_workers(app)
     assert service.update_preferences == {
         "enabled": False,
         "channel": "beta",
-        "manifest_url": "https://updates.example.test/manifest.json",
+        "manifest_url": "https://github.com/example/fortest",
     }
+
+    panel.check_updates()
+    _drain_workers(app)
+    assert panel.update_status.text() == "当前已是最新版本（v0.2.15）"
+    assert panel.update_install_button.isEnabled() is False
 
 
 def test_prompt_steps_save_ordered_custom_model_policy(workflow, app: QApplication):

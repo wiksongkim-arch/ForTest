@@ -379,47 +379,64 @@ class TaskManager:
     ) -> dict[str, Any]:
         """创建并排队任务；任务编号为十四位本地创建时间。"""
 
-        source = RequirementDocumentSource.create(
-            source_type,
-            document_source,
-        )
+        return self.create_tasks([document_source], source_type=source_type)[0]
+
+    def create_tasks(
+        self,
+        document_sources: list[str],
+        *,
+        source_type: str = "link",
+    ) -> list[dict[str, Any]]:
+        """先整体校验，再按输入顺序一次性持久化并加入先进先出队列。"""
+
+        sources = [
+            RequirementDocumentSource.create(source_type, value)
+            for value in document_sources
+        ]
+        if not sources:
+            raise ValueError("请至少输入一个需求文档地址")
         self.start()
         with self._condition:
-            task_id = self._next_task_id_locked()
-            now = self._iso_now()
-            task = {
-                "task_id": task_id,
-                "name": (
-                    Path(source.location).stem
-                    if source.source_type == "file"
-                    else _DEFAULT_TASK_NAME
-                ),
-                "doc_url": source.location if source.source_type == "link" else "",
-                "source_type": source.source_type,
-                "document_source": source.location,
-                "status": "pending",
-                "current_block": 0,
-                "total_blocks": 0,
-                "logs": [],
-                "log_entries": [],
-                "model_info": {},
-                "result": None,
-                "error": None,
-                "trashed": False,
-                "attempt": 1,
-                "created_at": now,
-                "started_at": None,
-                "finished_at": None,
-                "updated_at": now,
-                "trashed_at": None,
-            }
-            token = uuid4().hex
-            self._tasks[task_id] = task
-            self._run_tokens[task_id] = token
-            self._queue.append((task_id, token))
+            created: list[dict[str, Any]] = []
+            for source in sources:
+                task_id = self._next_task_id_locked()
+                now = self._iso_now()
+                task = {
+                    "task_id": task_id,
+                    "name": (
+                        Path(source.location).stem
+                        if source.source_type == "file"
+                        else _DEFAULT_TASK_NAME
+                    ),
+                    "doc_url": (
+                        source.location if source.source_type == "link" else ""
+                    ),
+                    "source_type": source.source_type,
+                    "document_source": source.location,
+                    "status": "pending",
+                    "current_block": 0,
+                    "total_blocks": 0,
+                    "logs": [],
+                    "log_entries": [],
+                    "model_info": {},
+                    "result": None,
+                    "error": None,
+                    "trashed": False,
+                    "attempt": 1,
+                    "created_at": now,
+                    "started_at": None,
+                    "finished_at": None,
+                    "updated_at": now,
+                    "trashed_at": None,
+                }
+                token = uuid4().hex
+                self._tasks[task_id] = task
+                self._run_tokens[task_id] = token
+                self._queue.append((task_id, token))
+                created.append(task)
             self._persist_locked()
             self._condition.notify_all()
-            return copy.deepcopy(task)
+            return copy.deepcopy(created)
 
     def list_tasks(
         self,

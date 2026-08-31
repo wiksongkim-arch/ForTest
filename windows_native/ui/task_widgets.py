@@ -150,7 +150,10 @@ class StatusIndicator(QLabel):
         self._render()
 
     def _render(self) -> None:
-        if self.state in {"queued", "starting", "pending", "running"}:
+        if self.state == "saved":
+            self.setObjectName("statusIdle")
+            self.setText("•")
+        elif self.state in {"queued", "starting", "pending", "running"}:
             self.setObjectName("statusRunning")
             self.setText(self._FRAMES[self.frame])
         elif self.state in {"completed", "partial_failure"}:
@@ -168,11 +171,12 @@ class NewTaskDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(tr("新建生成测试用例任务"))
         self.setModal(True)
-        # 在原 560 逻辑像素基础上扩展为 1.5 倍，同时保留用户继续拉伸的能力。
+        # 默认展示更宽的多行链接区，同时保留小屏下缩回 840 像素的能力。
         self.setMinimumWidth(840)
+        self.resize(980, 360)
         layout = QVBoxLayout(self)
         note = QLabel(
-            tr("输入需求文档地址或选择文件。任务创建后会按配置的并行数量自动执行。")
+            tr("链接模式每行输入一个需求文档地址；任务会按行序创建并开始。")
         )
         note.setObjectName("pageDescription")
         note.setWordWrap(True)
@@ -186,9 +190,14 @@ class NewTaskDialog(QDialog):
         self.source_type.addItem(tr("链接"), "link")
         self.source_type.addItem(tr("文件"), "file")
         self.source_type.setMinimumWidth(96)
-        self.url = QLineEdit()
-        self.url.setPlaceholderText("https://alidocs.dingtalk.com/...")
-        self.url.setClearButtonEnabled(True)
+        self.url = QPlainTextEdit()
+        self.url.setPlaceholderText(
+            tr("每行输入一个需求文档链接，例如：https://alidocs.dingtalk.com/...")
+        )
+        self.url.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.url.setMinimumHeight(132)
+        self.url.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.url.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.file_control = QWidget()
         file_layout = QHBoxLayout(self.file_control)
         file_layout.setContentsMargins(0, 0, 0, 0)
@@ -199,7 +208,7 @@ class NewTaskDialog(QDialog):
         self.file_path.setPlaceholderText(tr("尚未选择文件"))
         file_layout.addWidget(self.select_file_button)
         file_layout.addWidget(self.file_path, 1)
-        source_layout.addWidget(self.source_type)
+        source_layout.addWidget(self.source_type, 0, Qt.AlignTop)
         source_layout.addWidget(self.url, 1)
         source_layout.addWidget(self.file_control, 1)
         form.addRow(tr("需求文档"), source_control)
@@ -218,7 +227,6 @@ class NewTaskDialog(QDialog):
         self.file_path.textChanged.connect(self._update_ready)
         self.source_type.currentIndexChanged.connect(self._source_type_changed)
         self.select_file_button.clicked.connect(self._select_file)
-        self.url.returnPressed.connect(self._accept_if_ready)
         layout.addWidget(self.buttons)
         self._source_type_changed()
         translate_widget_tree(self)
@@ -230,7 +238,7 @@ class NewTaskDialog(QDialog):
         self._update_ready()
 
     def _update_ready(self, *_args) -> None:
-        self.create_button.setEnabled(bool(self.document_source()))
+        self.create_button.setEnabled(bool(self.document_sources()))
 
     def _select_file(self) -> None:
         selected, _chosen_filter = QFileDialog.getOpenFileName(
@@ -258,11 +266,20 @@ class NewTaskDialog(QDialog):
         return str(self.source_type.currentData() or "link")
 
     def document_source(self) -> str:
-        return (
-            self.file_path.text().strip()
-            if self.document_source_type() == "file"
-            else self.url.text().strip()
-        )
+        values = self.document_sources()
+        return values[0] if values else ""
+
+    def document_sources(self) -> list[str]:
+        """忽略空行并保留输入顺序；重复链接仍按用户输入创建。"""
+
+        if self.document_source_type() == "file":
+            value = self.file_path.text().strip()
+            return [value] if value else []
+        return [
+            line.strip()
+            for line in self.url.toPlainText().splitlines()
+            if line.strip()
+        ]
 
 
 class TaskDetailsDialog(QDialog):

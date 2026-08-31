@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from windows_native.i18n import tr
+from windows_native.ui.appearance_page import AppearancePage
 from windows_native.ui.common import (
     BasePage,
     ManualSpinBox,
@@ -34,6 +36,7 @@ from windows_native.ui.common import (
     SmoothTabWidget,
     ThemedCheckBox,
     card,
+    confirm_action,
     status_label,
 )
 
@@ -1128,24 +1131,37 @@ class OtherSettingsPanel(QWidget):
         self.update_channel.addItem(tr("稳定通道"), "stable")
         self.update_channel.addItem(tr("测试通道"), "beta")
         self.update_manifest = QLineEdit()
-        self.update_manifest.setPlaceholderText("https://")
+        self.update_manifest.setPlaceholderText(
+            "https://github.com/wiksongkim-arch/ForTest"
+        )
         update_form.addRow("", self.update_enabled)
         update_form.addRow(tr("更新通道"), self.update_channel)
-        update_form.addRow(tr("更新清单地址"), self.update_manifest)
+        update_form.addRow(tr("GitHub 更新链接"), self.update_manifest)
         update_layout.addLayout(update_form)
         update_layout.addWidget(
-            status_label(tr("更新设置在下次启动应用时生效；地址留空时不会联网检查。"))
+            status_label(
+                tr("可配置 GitHub 仓库链接；检查更新不会自动安装。")
+            )
         )
         self.update_status = status_label()
         update_layout.addWidget(self.update_status)
         update_actions = QHBoxLayout()
         update_actions.addStretch(1)
+        self.update_check_button = QPushButton(tr("检查更新"))
+        self.update_install_button = QPushButton(tr("立即更新"))
+        self.update_install_button.setObjectName("primary")
+        self.update_install_button.setEnabled(False)
         self.update_save_button = QPushButton(tr("保存更新设置"))
+        self.update_check_button.clicked.connect(self.check_updates)
+        self.update_install_button.clicked.connect(self.install_update)
         self.update_save_button.clicked.connect(self.save_update_preferences)
+        update_actions.addWidget(self.update_check_button)
+        update_actions.addWidget(self.update_install_button)
         update_actions.addWidget(self.update_save_button)
         update_layout.addLayout(update_actions)
         outer.addWidget(update_card)
         outer.addStretch(1)
+        self._available_update: dict[str, Any] | None = None
 
     def refresh(self) -> None:
         self.page.run_async(
@@ -1189,13 +1205,24 @@ class OtherSettingsPanel(QWidget):
         _set_combo(self.update_channel, str(view.get("channel") or "stable"))
         self.update_manifest.setText(str(view.get("manifest_url") or ""))
 
-    def save_update_preferences(self) -> None:
-        payload = {
+    def _update_payload(self) -> dict[str, Any]:
+        return {
             "enabled": self.update_enabled.isChecked(),
             "channel": str(self.update_channel.currentData() or "stable"),
             "manifest_url": self.update_manifest.text().strip(),
         }
-        self.update_save_button.setEnabled(False)
+
+    def _set_update_busy(self, busy: bool) -> None:
+        self.update_check_button.setEnabled(not busy)
+        self.update_save_button.setEnabled(not busy)
+        self.update_install_button.setEnabled(
+            not busy and self._available_update is not None
+        )
+
+    def save_update_preferences(self) -> None:
+        payload = self._update_payload()
+        self._available_update = None
+        self._set_update_busy(True)
         self.update_status.setText(tr("正在保存更新设置…"))
 
         def success(view: dict[str, Any]) -> None:
@@ -1205,7 +1232,96 @@ class OtherSettingsPanel(QWidget):
         self.page.run_async(
             lambda: self.service.save_update_preferences(payload),
             success=success,
-            finished=lambda: self.update_save_button.setEnabled(True),
+            finished=lambda: self._set_update_busy(False),
+        )
+
+    def check_updates(self) -> None:
+        """保存当前输入后再检查，确保界面显示与实际请求来源一致。"""
+
+        payload = self._update_payload()
+        self._available_update = None
+        self._set_update_busy(True)
+        self.update_status.setText(tr("正在检查更新…"))
+
+        def operation() -> dict[str, Any]:
+            preferences = self.service.save_update_preferences(payload)
+            return {
+                "preferences": preferences,
+                "update": self.service.check_for_update(),
+            }
+
+        def success(result: dict[str, Any]) -> None:
+            self._apply_update_view(result["preferences"])
+            self.apply_update_result(result["update"])
+
+        def failure(message: str) -> None:
+            self.update_status.setText(
+                tr("检查更新失败：{message}", message=message)
+            )
+            self.page.show_error(message)
+
+        self.page.run_async(
+            operation,
+            success=success,
+            failure=failure,
+            finished=lambda: self._set_update_busy(False),
+        )
+
+    def apply_update_result(self, value: dict[str, Any]) -> None:
+        """手动与启动自动检查共用同一份可安装版本状态。"""
+
+        update = dict(value)
+        if bool(update.get("available")):
+            self._available_update = update
+            self.update_status.setText(
+                tr("发现新版本 v{version}", version=update.get("version", ""))
+            )
+        else:
+            self._available_update = None
+            self.update_status.setText(
+                tr(
+                    "当前已是最新版本（v{version}）",
+                    version=update.get("current_version", ""),
+                )
+            )
+        self._set_update_busy(False)
+
+    def install_update(self) -> None:
+        update = self._available_update
+        if update is None:
+            return
+        version = str(update.get("version") or "")
+        if not confirm_action(
+            self,
+            "立即更新",
+            tr(
+                "下载并安装 ForTest v{version}？安装程序启动后应用将退出。",
+                version=version,
+            ),
+        ):
+            return
+        self._set_update_busy(True)
+        self.update_status.setText(
+            tr("正在下载并校验 ForTest v{version}…", version=version)
+        )
+
+        def success(_path: str) -> None:
+            self.update_status.setText(tr("安装程序已启动，ForTest 即将退出。"))
+            application = QApplication.instance()
+            if application is not None:
+                application.quit()
+
+        def failure(message: str) -> None:
+            self.update_status.setText(
+                tr("立即更新失败：{message}", message=message)
+            )
+            self.page.show_error(message)
+
+        self.page.run_async(
+            lambda: self.service.install_update(update),
+            success=success,
+            failure=failure,
+            finished=lambda: self._set_update_busy(False),
         )
 
 
@@ -1214,13 +1330,15 @@ class SettingsPage(BasePage):
 
     configuration_changed = Signal()
 
-    def __init__(self, service) -> None:
+    def __init__(self, service, theme_manager) -> None:
         super().__init__("设置")
         self.tabs = SmoothTabWidget()
         self.ai_panel = AIConfigurationsPanel(service, self)
+        self.appearance_panel = AppearancePage(theme_manager)
         self.other_panel = OtherSettingsPanel(service, self)
         self.ai_panel.configuration_changed.connect(self.configuration_changed.emit)
         self.tabs.addTab(self.ai_panel, tr("AI 配置"))
+        self.tabs.addTab(self.appearance_panel, tr("外观"))
         self.tabs.addTab(self.other_panel, tr("其他"))
         self.tabs.currentChanged.connect(self._refresh_current)
         self.content.addWidget(self.tabs, 1)
@@ -1231,5 +1349,7 @@ class SettingsPage(BasePage):
     def _refresh_current(self, _index: int) -> None:
         if self.tabs.currentWidget() is self.ai_panel:
             self.ai_panel.refresh()
+        elif self.tabs.currentWidget() is self.appearance_panel:
+            self.appearance_panel.refresh()
         else:
             self.other_panel.refresh()

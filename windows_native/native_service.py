@@ -16,6 +16,7 @@ from windows_native.errors import friendly_error
 from windows_native.codex_runtime import CodexRuntimeError, CodexRuntimeManager
 from windows_native.desktop_preferences import DesktopPreferences
 from windows_native.startup_registration import StartupRegistration
+from windows_native.update_service import UpdateService
 
 # 必须先安装策略，再加载可能探测 Codex CLI 的业务模块。
 install_hidden_subprocess_policy()
@@ -80,6 +81,7 @@ class NativeService:
     def __init__(self, data_root: Path):
         self.data_root = data_root
         self.desktop_preferences = DesktopPreferences(data_root)
+        self.update_service = UpdateService(data_root, self.desktop_preferences)
         self.startup_registration = StartupRegistration()
         self.codex_runtimes = CodexRuntimeManager(data_root)
         self.default_templates = DefaultTemplateManager(data_root)
@@ -151,11 +153,30 @@ class NativeService:
         return self.desktop_preferences.get_update_preferences()
 
     def save_update_preferences(self, values: dict[str, Any]) -> dict[str, Any]:
-        return self.desktop_preferences.set_update_preferences(
+        saved = self.desktop_preferences.set_update_preferences(
             enabled=bool(values.get("enabled", True)),
             channel=str(values.get("channel") or "stable"),
             manifest_url=str(values.get("manifest_url") or ""),
         )
+        self.update_service.reload()
+        return saved
+
+    def check_for_update(self) -> dict[str, Any]:
+        """手动或自动读取 GitHub Release，不在检查阶段下载文件。"""
+
+        return self.update_service.check_for_update()
+
+    def check_for_update_automatically(self) -> dict[str, Any] | None:
+        """仅在用户启用自动检查时联网，启动阶段不下载或安装。"""
+
+        if not self.update_service.can_check():
+            return None
+        return self.update_service.check_for_update()
+
+    def install_update(self, update: dict[str, Any]) -> str:
+        """下载并校验更新安装器，校验通过后才交给 Windows 启动。"""
+
+        return self.update_service.download_and_launch(update)
 
     def get_application_preferences(self) -> dict[str, Any]:
         """读取窗口关闭策略与 Windows 当前用户的实际开机启动状态。"""

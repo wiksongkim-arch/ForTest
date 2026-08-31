@@ -2,23 +2,25 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QFormLayout
+from PySide6.QtWidgets import QFormLayout, QVBoxLayout, QWidget
 
-from windows_native.ui.common import BasePage, SmoothComboBox, card, status_label
+from windows_native.ui.common import SmoothComboBox, card, status_label
 from windows_native.i18n import tr
 from windows_native.ui.theme import THEME_LABELS, ThemeManager
 
 
-class AppearancePage(BasePage):
+class AppearancePage(QWidget):
     """提供跟随系统、浅色、深色三档外观设置。"""
 
     def __init__(self, theme_manager: ThemeManager):
-        super().__init__(
-            "外观",
-            "选择舒适的界面明暗模式；更改会立即生效。",
-        )
+        super().__init__()
         self.theme_manager = theme_manager
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 18, 8, 8)
         appearance_card, layout = card("界面主题")
+        layout.addWidget(
+            status_label(tr("选择舒适的界面明暗模式；更改会立即生效。"))
+        )
         form = QFormLayout()
         self.mode_combo = SmoothComboBox()
         for value, label in THEME_LABELS.items():
@@ -28,8 +30,8 @@ class AppearancePage(BasePage):
         layout.addLayout(form)
         self.summary = status_label()
         layout.addWidget(self.summary)
-        self.content.addWidget(appearance_card)
-        self.add_stretch()
+        outer.addWidget(appearance_card)
+        outer.addStretch(1)
 
         self.mode_combo.activated.connect(self._mode_selected)
         self.theme_manager.mode_changed.connect(self._sync_mode)

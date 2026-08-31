@@ -149,13 +149,16 @@ class JenkinsDeploymentService:
         selections: list[dict[str, Any]],
         *,
         schedule: dict[str, Any] | None = None,
+        start_immediately: bool = True,
     ) -> dict:
         task = self.tasks.create(
             iteration_name,
             selections,
             schedule=schedule,
+            start_immediately=start_immediately,
         )
-        self.runner.wake()
+        if start_immediately:
+            self.runner.wake()
         return task
 
     def create_single_deployment_task(
@@ -228,7 +231,7 @@ class JenkinsDeploymentService:
             raise ValueError("进行中的任务不能重新部署")
         client = self._configured_client()
         selections: list[dict[str, Any]] = []
-        for item in task.get("items") or []:
+        for item in task.get("template_items") or task.get("items") or []:
             full_name = str(item.get("project_full_name") or "")
             environment = str(item.get("environment") or "")
             branch = str(item.get("branch") or "")
@@ -252,14 +255,8 @@ class JenkinsDeploymentService:
                     "branch": branch,
                 }
             )
-        retried = self.tasks.create(
-            str(task.get("iteration_name") or ""),
-            selections,
-            retry_of=str(task.get("task_id") or ""),
-            deployment_type=str(task.get("deployment_type") or "iteration"),
-            # 再次部署保留完整日志；已结束的历史时间范围不会被重新启用。
-            history_from=task,
-        )
+        # 同一任务只追加执行批次，避免列表中出现一份复制任务。
+        retried = self.tasks.redeploy(task_id, selections)
         self.runner.wake()
         return retried
 

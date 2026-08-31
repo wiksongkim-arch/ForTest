@@ -398,6 +398,7 @@ class NewDeploymentDialog(QDialog):
         )
         self._schedule_end = self._schedule_start + timedelta(days=1)
         self._validated_schedule: dict[str, Any] | None = None
+        self._start_immediately = True
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(22, 20, 22, 18)
@@ -437,10 +438,16 @@ class NewDeploymentDialog(QDialog):
 
         self.validation_status = status_label()
         outer.addWidget(self.validation_status)
-        self.create_button = QPushButton(tr("创建"))
+        self.save_button = QPushButton(tr("仅保存"))
+        self.create_button = QPushButton(tr("创建并部署"))
         self.create_button.setObjectName("primary")
         self.cancel_button = QPushButton(tr("取消"))
-        self.create_button.clicked.connect(self._validate_and_accept)
+        self.save_button.clicked.connect(
+            lambda _checked=False: self._validate_and_accept(False)
+        )
+        self.create_button.clicked.connect(
+            lambda _checked=False: self._validate_and_accept(True)
+        )
         self.cancel_button.clicked.connect(self.reject)
         actions = QHBoxLayout()
         actions.setSpacing(8)
@@ -489,6 +496,7 @@ class NewDeploymentDialog(QDialog):
         actions.addWidget(self.schedule_controls)
         actions.addStretch()
         actions.addWidget(self.cancel_button)
+        actions.addWidget(self.save_button)
         actions.addWidget(self.create_button)
         outer.addLayout(actions)
 
@@ -550,6 +558,11 @@ class NewDeploymentDialog(QDialog):
             "time_of_day": self.schedule_time.time().toString("HH:mm"),
         }
 
+    def start_immediately(self) -> bool:
+        """区分“仅保存”和“创建并部署”，业务层据此决定是否唤醒执行器。"""
+
+        return self._start_immediately
+
     def _open_schedule_range(self) -> None:
         dialog = ScheduleRangeDialog(
             self._schedule_start,
@@ -572,7 +585,7 @@ class NewDeploymentDialog(QDialog):
         self.schedule_interval.setVisible(interval_mode)
         self.schedule_time.setVisible(not interval_mode)
 
-    def _validate_and_accept(self) -> None:
+    def _validate_and_accept(self, start_immediately: bool = True) -> None:
         if not self.iteration_name.text().strip():
             self.validation_status.setText(tr("请输入迭代名称"))
             return
@@ -598,6 +611,7 @@ class NewDeploymentDialog(QDialog):
         except ValueError as exc:
             self.validation_status.setText(tr(str(exc)))
             return
+        self._start_immediately = bool(start_immediately)
         self.accept()
 
 

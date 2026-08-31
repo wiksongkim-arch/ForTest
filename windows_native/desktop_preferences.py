@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 from pathlib import Path
 from typing import Any
@@ -24,8 +25,55 @@ DEFAULT_LANGUAGE = "zh_CN"
 DEFAULT_TASK_PARALLELISM = 1
 MAX_TASK_PARALLELISM = 8
 UPDATE_CHANNELS = frozenset({"stable", "beta"})
+DEFAULT_UPDATE_URL = "https://github.com/wiksongkim-arch/ForTest"
 CLOSE_BEHAVIORS = frozenset({"ask", "minimize", "quit"})
 DEFAULT_CLOSE_BEHAVIOR = "ask"
+
+
+def normalize_update_url(value: object) -> str:
+    """把仓库或常见 Release 页面统一为无凭据的 GitHub 仓库地址。"""
+
+    raw = str(value or "").strip()
+    normalized = (raw or DEFAULT_UPDATE_URL).rstrip("/")
+    parsed = urlsplit(normalized)
+    try:
+        port = parsed.port
+    except ValueError:
+        port = -1
+    parts = [part for part in parsed.path.split("/") if part]
+    release_suffix = [part.casefold() for part in parts[2:]]
+    valid_suffix = (
+        not release_suffix
+        or release_suffix == ["releases"]
+        or release_suffix == ["releases", "latest"]
+        or (
+            len(release_suffix) == 3
+            and release_suffix[:2] == ["releases", "tag"]
+        )
+    )
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "github.com"
+        or port not in {None, 443}
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or len(parts) < 2
+        or not valid_suffix
+    ):
+        raise ValueError("更新链接必须是 GitHub 仓库的 HTTPS 地址")
+    owner, repository = parts[:2]
+    repository = repository.removesuffix(".git")
+    name_pattern = re.compile(r"[A-Za-z0-9_.-]+")
+    if (
+        not name_pattern.fullmatch(owner)
+        or not name_pattern.fullmatch(repository)
+        or owner in {".", ".."}
+        or repository in {".", ".."}
+    ):
+        raise ValueError("更新链接必须是 GitHub 仓库的 HTTPS 地址")
+    return f"https://github.com/{owner}/{repository}"
 
 
 class DesktopPreferences:
@@ -128,11 +176,15 @@ class DesktopPreferences:
         }
 
     def get_update_preferences(self) -> dict[str, Any]:
-        """读取自动更新预留配置；当前无服务端时不会发起下载。"""
+        """读取自动更新配置；旧空值和无效地址安全迁移为官方默认仓库。"""
 
         stored = self._read().get("updates", {})
         if not isinstance(stored, dict):
             stored = {}
+        try:
+            update_url = normalize_update_url(stored.get("manifest_url"))
+        except ValueError:
+            update_url = DEFAULT_UPDATE_URL
         return {
             "enabled": bool(stored.get("enabled", True)),
             "channel": (
@@ -140,7 +192,7 @@ class DesktopPreferences:
                 if stored.get("channel") in UPDATE_CHANNELS
                 else "stable"
             ),
-            "manifest_url": str(stored.get("manifest_url") or ""),
+            "manifest_url": update_url,
         }
 
     def set_update_preferences(
@@ -150,21 +202,12 @@ class DesktopPreferences:
         channel: str,
         manifest_url: str,
     ) -> dict[str, Any]:
-        """保存原生更新设置；远端清单只接受无用户信息的 HTTPS 地址。"""
+        """保存原生更新设置；下载来源只允许 GitHub 仓库。"""
 
         normalized_channel = str(channel).strip().lower()
         if normalized_channel not in UPDATE_CHANNELS:
             raise ValueError("更新通道只能是 stable 或 beta")
-        normalized_url = str(manifest_url).strip().rstrip("/")
-        if normalized_url:
-            parsed = urlsplit(normalized_url)
-            if (
-                parsed.scheme != "https"
-                or not parsed.hostname
-                or parsed.username
-                or parsed.password
-            ):
-                raise ValueError("更新清单地址必须是无用户信息的 HTTPS URL")
+        normalized_url = normalize_update_url(manifest_url)
         values = {
             "enabled": bool(enabled),
             "channel": normalized_channel,

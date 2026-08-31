@@ -389,15 +389,53 @@ def test_single_deployment_and_retry_keep_context_name_and_type(tmp_path):
         )
         completed = _wait_for(service, single["task_id"], "completed")
         retried = service.retry_deployment_task(completed["task_id"])
+        redeployed = _wait_until(
+            service,
+            completed["task_id"],
+            lambda value: value.get("status") == "completed"
+            and int(value.get("execution_number") or 0) == 2,
+        )
 
         assert completed["iteration_name"] == (
             "单点部署-test·dtm_pc·origin/feature/a"
         )
         assert completed["deployment_type"] == "single"
+        assert retried["task_id"] == completed["task_id"]
         assert retried["iteration_name"] == completed["iteration_name"]
         assert retried["deployment_type"] == "single"
         assert retried["execution_runs"]
-        assert any("历史日志已保留" in line for line in retried["logs"])
+        assert any("历史部署记录已保留" in line for line in retried["logs"])
+        assert [run["execution_number"] for run in redeployed["execution_runs"]] == [
+            1,
+            2,
+        ]
+        assert len(client.triggered) == 2
+    finally:
+        service.stop()
+
+
+def test_saved_deployment_stays_idle_then_starts_on_same_task(tmp_path):
+    client = FakeJenkinsClient()
+    service = _service(tmp_path, client)
+    saved = service.create_deployment_task(
+        "仅保存迭代",
+        [_selection("dtmzp/dtm_pc")],
+        start_immediately=False,
+    )
+    service.start()
+    try:
+        assert saved["status"] == "saved"
+        assert service.runner._next_task() is None
+        assert client.triggered == []
+
+        started = service.retry_deployment_task(saved["task_id"])
+        completed = _wait_for(service, saved["task_id"], "completed")
+
+        assert started["task_id"] == saved["task_id"]
+        assert completed["execution_number"] == 1
+        assert len(completed["execution_runs"]) == 1
+        assert len(service.list_deployment_tasks()) == 1
+        assert len(client.triggered) == 1
     finally:
         service.stop()
 

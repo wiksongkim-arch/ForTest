@@ -182,6 +182,30 @@ def test_default_parallelism_is_one_and_queue_is_fifo(setup_manager):
     assert first["task_id"] != second["task_id"]
 
 
+def test_batch_creation_is_atomic_and_starts_in_input_order(setup_manager):
+    service = ControlledGenerationService()
+    manager = setup_manager(service)
+
+    with pytest.raises(ValueError, match="地址不能为空"):
+        manager.create_tasks(
+            ["https://example.test/valid", ""],
+        )
+    assert manager.list_tasks() == []
+
+    sources = [f"https://example.test/{index}" for index in range(3)]
+    tasks = manager.create_tasks(sources)
+    assert [task["document_source"] for task in tasks] == sources
+    assert [task["task_id"] for task in tasks] == sorted(
+        task["task_id"] for task in tasks
+    )
+
+    for index in range(3):
+        wait_until(lambda: len(service.started) == index + 1)
+        assert service.started[index][1] == sources[index]
+        service.finish(f"backend-{index + 1}")
+    wait_until(lambda: manager.active_count() == 0)
+
+
 def test_local_document_source_is_absolute_persisted_and_dispatched(
     setup_manager,
     tmp_path,

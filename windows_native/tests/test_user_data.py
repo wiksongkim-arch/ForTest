@@ -75,16 +75,16 @@ def test_preferences_cover_language_guide_profile_and_update_foundation(tmp_path
         "membership_expires_at": "permanent",
     }
     update = UpdateService(tmp_path, preferences)
-    assert update.can_check() is False
-    assert update.state.restart_install_supported is True
+    assert update.can_check() is True
+    assert update.state.manifest_url == "https://github.com/wiksongkim-arch/ForTest"
     assert preferences.set_update_preferences(
         enabled=True,
         channel="beta",
-        manifest_url="https://updates.example.test/manifest.json/",
+        manifest_url="https://github.com/wiksongkim-arch/ForTest/releases/latest/",
     ) == {
         "enabled": True,
         "channel": "beta",
-        "manifest_url": "https://updates.example.test/manifest.json",
+        "manifest_url": "https://github.com/wiksongkim-arch/ForTest",
     }
     assert DesktopPreferences(tmp_path).get_update_preferences()["channel"] == "beta"
 
@@ -92,7 +92,7 @@ def test_preferences_cover_language_guide_profile_and_update_foundation(tmp_path
         preferences.set_update_preferences(
             enabled=True,
             channel="stable",
-            manifest_url="http://updates.example.test/manifest.json",
+            manifest_url="https://updates.example.test/manifest.json",
         )
 
 

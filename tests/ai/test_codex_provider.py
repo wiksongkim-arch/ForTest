@@ -448,6 +448,7 @@ class CodexProviderTests(unittest.TestCase):
             CodexSettings(runtime=CodexRuntime.sdk),
             sdk_factory=lambda: sdk,
             sdk_force_abort=force_abort,
+            git_runner=Mock(return_value=SimpleNamespace(returncode=0)),
             cleanup_timeout_seconds=0.01,
         )
         self.addCleanup(provider.close)

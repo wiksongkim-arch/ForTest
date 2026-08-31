@@ -8,7 +8,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtWidgets import QApplication, QFileDialog, QLabel
+from PySide6.QtWidgets import QApplication, QFileDialog, QLabel, QPlainTextEdit
 
 import windows_native.ui.document_page as document_page_module
 from utils.default_templates import CONTENT_TEMPLATE, OUTPUT_TEMPLATE
@@ -87,9 +87,10 @@ def test_new_task_dialog_switches_between_link_and_absolute_file(
     dialog = NewTaskDialog()
 
     assert dialog.minimumWidth() == 840
+    assert dialog.width() >= 980
     labels = [label.text() for label in dialog.findChildren(QLabel)]
     assert (
-        "输入需求文档地址或选择文件。任务创建后会按配置的并行数量自动执行。"
+        "链接模式每行输入一个需求文档地址；任务会按行序创建并开始。"
         in labels
     )
     assert "需求文档" in labels
@@ -98,7 +99,19 @@ def test_new_task_dialog_switches_between_link_and_absolute_file(
         "文件",
     ]
     assert dialog.file_control.isHidden()
-    dialog.url.setText("https://alidocs.dingtalk.com/i/nodes/example")
+    dialog.url.setPlainText(
+        "https://alidocs.dingtalk.com/i/nodes/first\n\n"
+        " https://alidocs.dingtalk.com/i/nodes/second "
+    )
+    assert dialog.url.lineWrapMode() == QPlainTextEdit.NoWrap
+    assert dialog.url.minimumHeight() == 132
+    assert dialog.document_sources() == [
+        "https://alidocs.dingtalk.com/i/nodes/first",
+        "https://alidocs.dingtalk.com/i/nodes/second",
+    ]
+    assert dialog.document_source() == (
+        "https://alidocs.dingtalk.com/i/nodes/first"
+    )
     assert dialog.create_button.isEnabled()
 
     dialog.source_type.setCurrentIndex(dialog.source_type.findData("file"))
@@ -111,6 +124,7 @@ def test_new_task_dialog_switches_between_link_and_absolute_file(
     assert dialog.document_source_type() == "file"
     assert dialog.file_path.text() == str(requirement.resolve())
     assert dialog.document_source() == str(requirement.resolve())
+    assert dialog.document_sources() == [str(requirement.resolve())]
     assert dialog.create_button.isEnabled()
     dialog.close()
 

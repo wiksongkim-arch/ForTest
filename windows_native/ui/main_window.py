@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import QTimer, Qt
@@ -24,12 +23,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from windows_native.paths import app_data_root
 from windows_native.product import PRODUCT_NAME, PRODUCT_VERSION
 from windows_native.single_instance import SingleInstance, show_duplicate_instance_message
-from windows_native.update_service import UpdateService
 from windows_native.i18n import set_language, tr, translate_widget_tree
-from windows_native.ui.appearance_page import AppearancePage
 from windows_native.ui.config_page import ConfigPage
 from windows_native.ui.deployment_widgets import DeploymentRecyclePage
 from windows_native.ui.deployment_config_page import DeploymentConfigPage
@@ -81,7 +77,11 @@ class _FallbackPreferences:
         return self.dismissed
 
     def get_update_preferences(self) -> dict:
-        return {"enabled": True, "channel": "stable", "manifest_url": ""}
+        return {
+            "enabled": True,
+            "channel": "stable",
+            "manifest_url": "https://github.com/wiksongkim-arch/ForTest",
+        }
 
     def get_close_behavior(self) -> str:
         """独立 UI 测试默认沿用正式程序的每次询问策略。"""
@@ -129,10 +129,6 @@ class MainWindow(QMainWindow):
         self.theme_manager = theme_manager
         self.deployment_service = deployment_service
         self.preferences = getattr(theme_manager, "preferences", _FallbackPreferences())
-        self.update_service = UpdateService(
-            Path(getattr(service, "data_root", app_data_root())),
-            self.preferences,
-        )
         self.configuration_snapshot: dict = {
             "complete": False,
             "sections": [],
@@ -181,18 +177,18 @@ class MainWindow(QMainWindow):
         )
         self.home_page = HomePage(service, task_manager)
         # 设置中心直接承接 AI 能力快照，不再创建旧的全局模型选择页面。
-        self.settings_page = SettingsPage(service)
+        self.settings_page = SettingsPage(service, theme_manager)
         self.settings_page.configuration_changed.connect(
             self.refresh_configuration_status
         )
-        self.appearance_page = AppearancePage(theme_manager)
+        # 保留属性供主题刷新与既有扩展访问，页面本体已并入设置标签。
+        self.appearance_page = self.settings_page.appearance_panel
         self.nav_pages = [
             self.quick_deploy_page,
             self.home_page,
             self.settings_page,
-            self.appearance_page,
         ]
-        labels = [tr("快捷部署"), tr("测试用例生成"), tr("设置"), tr("外观")]
+        labels = [tr("快捷部署"), tr("测试用例生成"), tr("设置")]
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         for index, (label, page) in enumerate(zip(labels, self.nav_pages, strict=True)):
@@ -454,6 +450,25 @@ class MainWindow(QMainWindow):
         if self._startup_snapshot_applied and self._background_refresh_enabled:
             # 外部 Jenkins 刷新不是启动依赖，主窗口稳定后再安全地异步执行。
             QTimer.singleShot(1200, self.quick_deploy_page.start_remote_refresh)
+        if self._background_refresh_enabled:
+            # 自动更新只检查元数据；下载和安装仍必须由用户点击“立即更新”。
+            QTimer.singleShot(2200, self._start_auto_update_check)
+
+    def _start_auto_update_check(self) -> None:
+        checker = getattr(self.service, "check_for_update_automatically", None)
+        if not callable(checker):
+            return
+
+        def success(value: Any) -> None:
+            if isinstance(value, dict):
+                self.settings_page.other_panel.apply_update_result(value)
+
+        self.settings_page.run_async(
+            checker,
+            success=success,
+            # 自动检查失败保持静默，用户仍可在设置页手动重试并查看错误。
+            failure=lambda _message: None,
+        )
 
     def apply_adaptive_geometry(self) -> None:
         """按当前屏幕可用区域设置初始尺寸和位置。"""

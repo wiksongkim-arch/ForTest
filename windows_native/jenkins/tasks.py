@@ -30,10 +30,9 @@ class DeploymentTaskRepository:
         iteration_name: str,
         selections: list[dict[str, Any]],
         *,
-        retry_of: str = "",
         deployment_type: str = "iteration",
         schedule: dict[str, Any] | None = None,
-        history_from: dict[str, Any] | None = None,
+        start_immediately: bool = True,
     ) -> dict:
         name = str(iteration_name or "").strip()
         if not name:
@@ -53,31 +52,28 @@ class DeploymentTaskRepository:
             now = now_value.isoformat(timespec="seconds")
             normalized_schedule = normalize_schedule(schedule, now=now_value)
             items = self.runtime_items(task_id, normalized, execution_number=1)
-            inherited_entries, inherited_logs, inherited_runs = self._history(
-                history_from
-            )
             scheduled = bool(normalized_schedule.get("enabled"))
-            creation_message = (
-                f"定时部署任务已创建，共 {len(items)} 个子任务；"
-                f"首次执行时间 {normalized_schedule['next_run_at']}"
-                if scheduled
-                else f"部署任务已创建，共 {len(items)} 个子任务"
-            )
-            if history_from:
-                source_id = str(history_from.get("task_id") or retry_of or "")
-                inherited_logs.append(f"从任务 {source_id} 重新部署，以上历史日志已保留")
-                inherited_entries.append(
-                    {
-                        "timestamp": now,
-                        "message": f"从任务 {source_id} 重新部署，以上历史日志已保留",
-                    }
+            if not start_immediately:
+                creation_message = f"部署任务已保存，共 {len(items)} 个子任务，尚未触发部署"
+            elif scheduled:
+                creation_message = (
+                    f"定时部署任务已创建，共 {len(items)} 个子任务；"
+                    f"首次执行时间 {normalized_schedule['next_run_at']}"
                 )
+            else:
+                creation_message = f"部署任务已创建，共 {len(items)} 个子任务"
             task = {
                 "schema_version": 3,
                 "task_id": task_id,
                 "iteration_name": name,
                 "deployment_type": normalized_type,
-                "status": "scheduled" if scheduled else "queued",
+                "status": (
+                    "saved"
+                    if not start_immediately
+                    else "scheduled"
+                    if scheduled
+                    else "queued"
+                ),
                 "orchestration_mode": "direct_parallel_subtasks",
                 "current_step": 0,
                 "total_steps": len(items),
@@ -92,14 +88,12 @@ class DeploymentTaskRepository:
                 "error": "",
                 "stop_requested": False,
                 "trashed": False,
-                "retry_of": str(retry_of or ""),
                 "schedule": normalized_schedule,
                 "execution_number": 0,
                 "active_run_id": "",
-                "execution_runs": inherited_runs,
-                "logs": [*inherited_logs, creation_message],
+                "execution_runs": [],
+                "logs": [creation_message],
                 "log_entries": [
-                    *inherited_entries,
                     {
                         "timestamp": now,
                         "message": creation_message,
@@ -109,6 +103,90 @@ class DeploymentTaskRepository:
             tasks.append(task)
             self._write_tasks(tasks)
             return copy.deepcopy(task)
+
+    def redeploy(
+        self,
+        task_id: str,
+        selections: list[dict[str, Any]],
+    ) -> dict:
+        """在原任务上启动下一批部署，任务 ID 和所有已归档批次保持不变。"""
+
+        normalized = self._normalize_selections(selections)
+        if not normalized:
+            raise ValueError("请至少选择一个环境、项目和分支")
+
+        def mutate(task: dict) -> dict:
+            previous_status = str(task.get("status") or "")
+            if previous_status in _ACTIVE_STATUSES:
+                raise ValueError("进行中的任务不能重新部署")
+
+            # 兼容升级前没有 execution_runs 的已结束任务，覆盖运行态前先归档快照。
+            runs = [
+                copy.deepcopy(item)
+                for item in task.get("execution_runs") or []
+                if isinstance(item, dict)
+            ]
+            if not runs and task.get("items") and (
+                task.get("started_at") or int(task.get("execution_number") or 0)
+            ):
+                runs = self._history(task)[2]
+            execution_number = max(
+                [
+                    int(task.get("execution_number") or 0),
+                    *(int(item.get("execution_number") or 0) for item in runs),
+                ]
+            )
+
+            schedule = task.get("schedule") or {}
+            if previous_status == "saved" and bool(schedule.get("enabled")):
+                # 仅保存的定时任务首次点击“部署”时才正式激活计划。
+                schedule = normalize_schedule(schedule, now=self._clock())
+                next_status = "scheduled"
+            else:
+                schedule = normalize_schedule(None, now=self._clock())
+                next_status = "queued"
+
+            next_execution = execution_number + 1
+            now = self._clock().isoformat(timespec="seconds")
+            task.update(
+                {
+                    "schema_version": 3,
+                    "status": next_status,
+                    "orchestration_mode": "direct_parallel_subtasks",
+                    "template_items": copy.deepcopy(normalized),
+                    "items": self.runtime_items(
+                        str(task.get("task_id") or ""),
+                        normalized,
+                        execution_number=next_execution,
+                    ),
+                    "current_step": 0,
+                    "total_steps": len(normalized),
+                    "progress_percent": 0,
+                    "started_at": "",
+                    "finished_at": "",
+                    "duration_seconds": 0,
+                    "error": "",
+                    "stop_requested": False,
+                    "active_run_id": "",
+                    "execution_number": execution_number,
+                    "execution_runs": runs,
+                    "schedule": schedule,
+                    "submission_finished": False,
+                }
+            )
+            task.pop("active_run_log_start", None)
+            message = (
+                f"已触发首次部署，任务 ID 保持不变"
+                if execution_number == 0
+                else f"已请求第 {next_execution} 次部署，历史部署记录已保留"
+            )
+            task.setdefault("logs", []).append(message)
+            task.setdefault("log_entries", []).append(
+                {"timestamp": now, "message": message}
+            )
+            return task
+
+        return self.update(task_id, mutate)
 
     def list(self, *, trashed: bool = False) -> list[dict]:
         with self._lock:

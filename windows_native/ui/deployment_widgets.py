@@ -37,6 +37,7 @@ from windows_native.ui.task_widgets import StatusIndicator
 
 
 DEPLOYMENT_STATUS_TEXT = {
+    "saved": "已保存",
     "queued": "排队中",
     "scheduled": "定时等待",
     "running": "进行中",
@@ -234,7 +235,7 @@ class DeploymentTaskTable(QWidget):
                     )
                 action_layout.addWidget(stop)
             else:
-                retry = QPushButton(tr("重新部署"))
+                retry = QPushButton(tr("部署" if state == "saved" else "重新部署"))
                 retry.setObjectName("compact")
                 if self.on_retry:
                     retry.clicked.connect(

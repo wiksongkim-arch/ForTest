@@ -518,6 +518,7 @@ class QuickDeployPage(BasePage):
                 dialog.iteration_name.text().strip(),
                 dialog.selections(),
                 schedule=dialog.schedule_value(),
+                start_immediately=dialog.start_immediately(),
             )
             self.refresh_tasks()
             self.new_deployment_requested.emit()

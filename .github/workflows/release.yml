@@ -6,10 +6,10 @@ on:
       tag:
         description: Existing version tag to publish
         required: true
-        default: v0.2.14
+        default: v0.2.15
         type: string
 
-# 发布流程只使用 GitHub 自动签发的短期令牌，不保存长期凭据。
+# 发布流程仅在发布步骤使用 GitHub 短期令牌，不保存长期凭据。
 permissions:
   contents: read
 
@@ -59,7 +59,7 @@ jobs:
             throw "Release tag $env:RELEASE_TAG does not match VERSION $version."
           }
 
-          # 只允许构建指向当前检出提交的现有标签，避免发布错误源码。
+          # 标签必须准确指向当前检出提交，避免错误源码进入正式发布。
           $headCommit = (git rev-parse HEAD).Trim()
           $tagCommit = (git rev-list -n 1 $env:RELEASE_TAG).Trim()
           if ($headCommit -ne $tagCommit) {
@@ -82,7 +82,7 @@ jobs:
             throw "Inno Setup download hash verification failed."
           }
 
-          # 下载后同时校验哈希和发布者签名，避免未经验证的编译器进入发布链。
+          # 同时校验发布者签名，未验证的编译器不得进入发布链。
           $signature = Get-AuthenticodeSignature -LiteralPath $setupPath
           if (
             $signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
@@ -107,7 +107,7 @@ jobs:
           }
 
       - name: Build, test, and audit the installer
-        # 使用中性的 CI 构建身份，避免把托管机默认用户或预装服务变量误判为用户数据。
+        # 使用中性构建身份，避免托管机默认用户数据进入产物或隐私扫描。
         env:
           LOGNAME: ForTestBuildUser
           USER: ForTestBuildUser
@@ -131,19 +131,39 @@ jobs:
 
           $hash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash
           $checksumPath = "$installerPath.sha256"
-          $checksumLine = "$hash  $installerName`n"
           [System.IO.File]::WriteAllText(
             $checksumPath,
-            $checksumLine,
+            "$hash  $installerName`n",
             [System.Text.ASCIIEncoding]::new()
           )
 
-          # 以 Base64 解码 UTF-8 中文发布说明，避免依赖托管机的默认代码页。
-          $notesBase64 = "IyBGb3JUZXN0IHZfX1ZFUlNJT05fXwoKRm9yVGVzdCDnmoTmnIDmlrDmupDnoIHlhazlvIDniYjmnKzvvIzmj5Dkvpvlj6/nm7TmjqXlronoo4XnmoQgV2luZG93cyB4NjQg5a6J6KOF5YyF44CCCgojIyDmnKzniYjmnKzlj5jljJYKCi0g5L+u5aSN5rWL6K+V55So5L6L55Sf5oiQ5Lu75Yqh5Zyo5Zu+54mH5LiL6L295rOi5Yqo5pe26K+v5Yik4oCc6YOo5YiG5a6M5oiQ4oCd55qE6Zeu6aKY77yb5Zu+54mH5oyJ6aG56YeN6K+V77yM5oiQ5Yqf5Zu+54mH57un57ut5Y+C5LiO5YiG5p6Q77yM5aSx6LSl5L+h5oGv5L2/55So5Lit6Iux5paH55WM6Z2i5o+Q56S644CCCi0g5L+u5aSN5Y2H57qn5a6J6KOF6YGX55WZ5penIGBfaW50ZXJuYWxgIOS+nei1luWvvOiHtOacrOWcsCBFeGNlbCDlpIfku73lhpnlhaUgYEF0dHJpYnV0ZUVycm9yYO+8m+WuieijheWZqOWNh+e6p+WJjea4heeQhuWGhemDqOi/kOihjOebruW9le+8jOW5tuWKoOWFpeaJk+WMheWQjuWkh+S7veWGkueDn+OAggotIOWbuuWumui/kOihjOaXtuacrOWcsOi+k+WHuuebruW9le+8jOS7u+WKoeS7juS7u+aEj+W3peS9nOebruW9leWQr+WKqOaXtuWdh+WPr+WGmeWFpeeUqOaIt+aVsOaNruWkh+S7veOAggotIOWKoOWbuuWklumDqOWbvueJh+S4i+i9veWSjCBKZW5raW5zIOaehOW7uumTvuaOpe+8mumAkOi3s+agoemqjOWFrOe9keWcsOWdgOOAgeWbuuWumuW3sumqjOivgSBJUCDov57mjqXvvIzlubbpmZDliLbmnoTlu7rpk77mjqXkuLrlkIzmupAgSFRUUChTKeOAggotIOabtOaWsCB2MC4yLjE0IOS4reiLseaWh+iEseaVj+eVjOmdouaIquWbvuWSjOWbnuW9kuWfuue6v+OAggoKIyMg5LiL6L295LiO5qCh6aqMCgotIGBGb3JUZXN0LVdpbmRvd3MteDY0LVNldHVwLV9fVkVSU0lPTl9fLmV4ZWDvvJpXaW5kb3dzIHg2NCDlronoo4XnqIvluo/jgIIKLSBgRm9yVGVzdC1XaW5kb3dzLXg2NC1TZXR1cC1fX1ZFUlNJT05fXy5leGUuc2hhMjU2YO+8mlNIQS0yNTYg5qCh6aqM5paH5Lu244CCCgrlronoo4XnqIvluo8gU0hBLTI1Nu+8mgoKYF9fU0hBMjU2X19gCgrns7vnu5/opoHmsYLvvJpXaW5kb3dzIDEwIDE4MDkg5oiW5pu06auY54mI5pys44CBV2luZG93cyAxMe+8jDY0IOS9jeOAgum7mOiupOaMieW9k+WJjeeUqOaIt+Wuieijhe+8jOaXoOmcgOeuoeeQhuWRmOadg+mZkOOAggoKIyMg6aqM6K+B57uT5p6cCgotIFdpbmRvd3Mg5Y6f55Sf5qGM6Z2i5rWL6K+V77yaMjA2IOmhuemAmui/h+OAggotIOWFseS6q+S4muWKoeWbnuW9ku+8mjM0NyDpobnpgJrov4fjgIE3IOmhuei3s+i/h++8m+WPpuaciSAxNzYg6aG55a2Q5rWL6K+V6YCa6L+H44CCCi0g5rqQ56CB44CB5a6J6KOF5Lqn54mp5LiO5LiL6L296ZO+6Lev6ZqQ56eB6Zeo56aB6YCa6L+H44CCCi0g5oyH5a6a5rWL6K+V55So5L6L55Sf5oiQ5Lu75Yqh5aSN6LeR5a6M5oiQ77yaNS81IOWMuuWdl+OAgTEwOCDmnaHnlKjkvovvvIzmnKzlnLDlpIfku73kuI7ov5znq6/ovpPlh7rlnYfmiJDlip/jgIIKLSDlronoo4XjgIHlrozmlbTlkI7nq6/lkK/liqjjgIHkuLvnqpflj6Plk43lupTlkozmoLjlv4PpobXpnaLlhpLng5/pgJrov4fjgIIKLSDlronlhajlt67lvILmiavmj4/lj5HnjrDnmoTov5znqIvlm77niYcgU1NSRiDkuI4gSmVua2lucyDmnKzlnLDnm67moIfmiZPlvIDpo47pmanlnYflt7Lkv67lpI3lubbpqozor4HjgIIKCiMjIOS9v+eUqOivtOaYjgoKLSDlronoo4XljIXlvZPliY3mnKrov5vooYwgQXV0aGVudGljb2RlIOS7o+eggeetvuWQje+8jFdpbmRvd3Mg5Y+v6IO95pi+56S6IFNtYXJ0U2NyZWVuIOaPkOekuu+8m+ivt+S7heS7juacrCBSZWxlYXNlIOS4i+i9veW5tuaguOWvuSBTSEEtMjU244CCCi0gSmVua2luc+OAgeaooeWei+S4juaWh+aho+W5s+WPsOetieWklumDqOacjeWKoemcgOimgeeUqOaIt+iHquihjOmFjee9rue9kee7nOOAgei0puWPt+OAgeWHreaNruS4juebuOW6lOadg+mZkOOAggotIOacrOS7k+W6k+mHh+eUqCBQb2x5Rm9ybSBOb25jb21tZXJjaWFsIExpY2Vuc2UgMS4wLjDvvIzmmK/mupDnoIHlhazlvIDnmoTpnZ7llYbkuJrorrjlj6/or4HvvIzlubbpnZ4gT1NJIOWumuS5ieeahOW8gOa6kOiuuOWPr+ivge+8m+WPr+eUqOS6juWtpuS5oOOAgeeglOeptuOAgeS4quS6uumhueebruWPiuWFtuS7luiuuOWPr+ivgeWFgeiuuOeahOmdnuWVhuS4mueUqOmAlO+8jOacque7j+aOiOadg+S4jeW+l+WVhueUqOOAgg=="
-          $notesTemplate = [System.Text.Encoding]::UTF8.GetString(
-            [System.Convert]::FromBase64String($notesBase64)
-          )
-          $notes = $notesTemplate.Replace("__VERSION__", $env:RELEASE_VERSION).Replace("__SHA256__", $hash)
+          $notes = @"
+          # ForTest v$env:RELEASE_VERSION
+
+          Source-available Windows x64 release of ForTest.
+
+          ## Highlights
+
+          - Quick Deploy now redeploys the same task while retaining per-run history, and iteration deployments can be saved without starting.
+          - Test Case Generation accepts multiple links, one per line, and creates and starts tasks in input order.
+          - Appearance is now a Settings tab immediately after AI Settings.
+          - Other settings now provide configurable GitHub Release checks and an explicit Update Now action with download verification.
+          - EIM monitoring remains unavailable because the mandatory self-message G0 gate is not satisfied by DWS v1.0.60.
+
+          ## Assets
+
+          - ``$installerName``: Windows x64 installer.
+          - ``$installerName.sha256``: SHA-256 checksum.
+
+          Installer SHA-256: ``$hash``
+
+          ## Notes
+
+          - Requires 64-bit Windows 10 version 1809 or later, or Windows 11.
+          - The installer is not Authenticode-signed and Windows may display a SmartScreen warning. Download only from this Release and verify SHA-256 first.
+          - Jenkins, model, and document services require the user's own accounts, network access, data, and permissions.
+          - Licensed under PolyForm Noncommercial 1.0.0. This is source-available software, not OSI open source; commercial use requires separate written permission.
+          "@
           $notesPath = Join-Path $env:RUNNER_TEMP "release-notes-$env:RELEASE_VERSION.md"
           [System.IO.File]::WriteAllText(
             $notesPath,
@@ -154,7 +174,6 @@ jobs:
           "INSTALLER_PATH=$installerPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CHECKSUM_PATH=$checksumPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "RELEASE_NOTES_PATH=$notesPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "RELEASE_SHA256=$hash" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Publish GitHub Release
         env:
