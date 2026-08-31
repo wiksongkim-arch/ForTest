@@ -2,7 +2,7 @@
 
 # ForTest
 
-由 Codex 协助开发、面向软件测试工程师的原生 Windows 桌面工具，聚焦 Jenkins 快捷部署与高质量测试用例生成。
+由 Codex 协助开发、面向软件测试工程师的 Windows 桌面工具，聚焦 Jenkins 快捷部署与高质量测试用例生成。
 
 [下载最新版本](https://github.com/wiksongkim-arch/ForTest/releases/latest) · [提交问题](https://github.com/wiksongkim-arch/ForTest/issues) · [参与贡献](CONTRIBUTING.md) · [安全报告](SECURITY.md)
 
@@ -10,7 +10,7 @@
 
 ForTest 是一款使用 Codex 参与开发、面向软件测试工程师的 Windows 桌面端工具。项目希望把重复、分散的测试工作沉淀为清晰、可复用、可追踪的标准流程，减少测试人员在需求文档、模型、用例模板和部署平台之间反复切换的成本。
 
-当前版本为纯原生 Windows x64 桌面应用，不依赖浏览器界面，也不会启动 Streamlit、FastAPI 或本地 Web 服务；目前包含 **Jenkins 快捷部署**和**测试用例生成**两大核心模块。
+当前版本为纯 Windows x64 桌面应用，不依赖浏览器界面，也不会启动 Streamlit、FastAPI 或本地 Web 服务；目前包含 **Jenkins 快捷部署**和**测试用例生成**两大核心模块。
 
 ## 核心能力
 
@@ -42,7 +42,7 @@ ForTest 是一款使用 Codex 参与开发、面向软件测试工程师的 Wind
 
 ## 工程与使用特点
 
-- 原生 Qt 桌面体验，支持跟随系统、浅色和深色外观。
+- Qt桌面体验，支持跟随系统、浅色和深色外观。
 - 简体中文、繁体中文和英文界面可即时切换。
 - 配置、任务记录、日志和生成文件统一保存在 `%LOCALAPPDATA%\ForTest\UserData`，不写入安装目录。
 - 密钥与普通配置分离保存，日志和错误信息会执行凭据脱敏。
@@ -60,7 +60,7 @@ ForTest 是一款使用 Codex 参与开发、面向软件测试工程师的 Wind
 
 ### 安装与首次使用
 
-1. 打开 [GitHub Releases](https://github.com/wiksongkim-arch/ForTest/releases/latest)，下载 `ForTest-Windows-x64-Setup-0.2.13.exe`。
+1. 打开 [GitHub Releases](https://github.com/wiksongkim-arch/ForTest/releases/latest)，下载 `ForTest-Windows-x64-Setup-0.2.14.exe`。
 2. 对照 Release 页面提供的 SHA-256 校验值确认文件完整性，然后运行安装程序。ForTest 默认安装到当前用户目录，不要求管理员权限。
 3. 启动 ForTest，根据首页配置状态完成必要设置：
    - 快捷部署：填写 Jenkins 地址、用户名与 API Token，并检测连接。
@@ -107,12 +107,12 @@ ForTest 是一款使用 Codex 参与开发、面向软件测试工程师的 Wind
 
 | 路径 | 说明 |
 | --- | --- |
-| `windows_native/` | 原生 Qt 桌面端、Jenkins 模块、界面组件、运行时管理、测试、PyInstaller 配置和 Inno Setup 安装器脚本。 |
+| `windows_native/` | Qt桌面端、Jenkins 模块、界面组件、运行时管理、测试、PyInstaller 配置和 Inno Setup 安装器脚本。 |
 | `backend/` | AI 配置、提示词、生成流程、设置模型与安全校验等共享业务核心。 |
 | `services/` | 文档 MCP、表格输出和需求文档处理等外部服务适配。 |
 | `utils/` | Excel 写入、默认模板加载等通用工具。 |
 | `tests/` | 共享业务核心的单元、集成、安全和回归测试。 |
-| `windows_native/tests/` | 原生桌面端、Jenkins、任务调度、启动流程和离屏 UI 测试。 |
+| `windows_native/tests/` | 桌面端、Jenkins、任务调度、启动流程和离屏 UI 测试。 |
 | `windows_native/assets/` | 应用图标及可合法分发的内置模板。 |
 | `png/` | 中英文 README 使用的脱敏界面预览图。 |
 | `.github/` | Issue/PR 模板与 Windows CI 工作流。 |
@@ -132,7 +132,7 @@ powershell -ExecutionPolicy Bypass -File windows_native\build.ps1
 构建脚本会创建隔离环境并依次完成：
 
 1. 源码隐私门禁；
-2. 原生桌面端及离屏 UI 测试；
+2. 桌面端及离屏 UI 测试；
 3. 共享业务核心回归测试；
 4. Windows x64 程序打包与 PE 架构检查；
 5. 产物隐私门禁和打包后启动诊断；

@@ -848,6 +848,24 @@ three-body"""
             },
         )
 
+    def test_generator_keeps_available_images_and_records_partial_download(self):
+        provider = fake_provider()
+        images = fake_image_workspace()
+        images.download_many.return_value = (Path("D:/safe/available.png"),)
+        generator = make_generator(provider=provider, image_workspace=images)
+
+        result = generator.generate(PRD_URL)
+
+        self.assertTrue(result["success"])
+        request = provider.process_section.call_args.args[0]
+        self.assertEqual(request.images, (Path("D:/safe/available.png"),))
+        self.assertTrue(
+            any(
+                "区块图片部分下载失败（成功 1/5）" in line
+                for line in result["logs"]
+            )
+        )
+
     def test_unknown_component_crossing_provider_boundary_falls_back_once(self):
         provider = fake_provider(section_result(components=["伪造组件"]))
         generator = make_generator(provider=provider)

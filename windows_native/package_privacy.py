@@ -363,6 +363,17 @@ def audit_source(project_root: Path) -> list[Finding]:
                 "安装器来源不是单一 PyInstaller 产物目录",
             )
         )
+    expected_runtime_cleanup = (
+        'Type: filesandordirs; Name: "{app}\\_internal"'
+    )
+    if expected_runtime_cleanup not in installer:
+        findings.append(
+            Finding(
+                "unsafe-installer-upgrade",
+                "windows_native/installer.iss",
+                "覆盖升级未清理旧 PyInstaller 运行时目录",
+            )
+        )
     return findings
 
 

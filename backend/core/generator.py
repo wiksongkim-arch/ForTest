@@ -258,6 +258,13 @@ class TestCaseGenerator:
             except Exception:
                 self._raise_if_cancelled()
                 self.add_log("区块图片下载失败，继续处理文本需求")
+            else:
+                if len(local_images) < len(image_urls):
+                    self.add_log(
+                        "区块图片部分下载失败"
+                        f"（成功 {len(local_images)}/{len(image_urls)}），"
+                        "继续处理可用图片与文本需求"
+                    )
 
         self._raise_if_cancelled()
 

@@ -11,6 +11,35 @@ from pathlib import Path
 from PySide6.QtCore import QLockFile
 
 
+def test_local_backup_smoke_isolated_from_user_data(tmp_path):
+    """冻结包自检只写一次性目录，并覆盖 openpyxl 的真实导入与保存。"""
+
+    project_root = Path(__file__).resolve().parents[2]
+    diagnostics = tmp_path / "backup-diagnostics.json"
+    local_app_data = tmp_path / "LocalAppData"
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "windows_native.main",
+            "--backup-smoke-test",
+            "--diagnostics-file",
+            str(diagnostics),
+        ],
+        cwd=project_root,
+        env={**os.environ, "LOCALAPPDATA": str(local_app_data)},
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(diagnostics.read_text(encoding="utf-8"))
+    assert payload == {"success": True, "error_type": None}
+    assert not (local_app_data / "ForTest" / "UserData").exists()
+
+
 def test_smoke_test_skips_user_instance_lock_and_uses_isolated_data(tmp_path):
     """已有实例持锁时，自检仍应快速退出且不进入隐藏消息框。"""
 
@@ -51,7 +80,7 @@ def test_smoke_test_skips_user_instance_lock_and_uses_isolated_data(tmp_path):
     diagnostics_root = Path(payload["data_root"])
     assert payload["diagnostics_isolated"] is True
     assert payload["product"] == "ForTest"
-    assert payload["version"] == "0.2.13"
+    assert payload["version"] == "0.2.14"
     assert payload["backend_runtime_loaded"] is False
     assert payload["codex_runtime_loaded"] is False
     assert payload["first_paint_seconds"] < 3.0
@@ -83,7 +112,8 @@ def test_full_startup_smoke_preloads_backend_before_main_and_keeps_heartbeat(tmp
         env=environment,
         capture_output=True,
         text=True,
-        timeout=30,
+        # 外层等待必须大于产品的 45 秒启动门禁，避免在断言前被测试框架误杀。
+        timeout=60,
         check=False,
     )
 
@@ -101,3 +131,4 @@ def test_full_startup_smoke_preloads_backend_before_main_and_keeps_heartbeat(tmp
     assert payload["post_show_heartbeat_ticks"] >= 20
     assert payload["post_show_max_heartbeat_gap_seconds"] < 0.5
     assert payload["post_show_threadpool_peak"] == 0
+    assert payload["startup_seconds"] < 45

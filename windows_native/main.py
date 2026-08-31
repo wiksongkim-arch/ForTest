@@ -57,9 +57,62 @@ def _delete_all_user_data() -> int:
         return 1
 
 
+def _run_backup_smoke_test() -> int:
+    """在冻结环境中验证 openpyxl 导入和原子 XLSX 备份，不读取正式用户数据。"""
+
+    diagnostics_value = _argument_value("--diagnostics-file")
+    if not diagnostics_value:
+        return 2
+    payload: dict[str, object]
+    try:
+        from backend.ai.types import TEST_CASE_FIELDS
+        from services.dingtalk_output import DingTalkOutputWriter
+        from openpyxl import load_workbook
+
+        with TemporaryDirectory(prefix="ForTest-backup-smoke-") as folder:
+            root = Path(folder)
+            writer = DingTalkOutputWriter(
+                object(),
+                object(),
+                "https://example.test/template",
+                "https://example.test/folder",
+                lock_dir=root / "locks",
+            )
+            destination = root / "output" / "diagnostic.xlsx"
+            writer._write_local_backup(
+                destination,
+                [{field: "诊断值" for field in TEST_CASE_FIELDS}],
+            )
+            workbook = load_workbook(destination, read_only=True)
+            try:
+                valid = (
+                    destination.is_file()
+                    and workbook.active.max_row == 2
+                    and workbook.active.max_column == len(TEST_CASE_FIELDS)
+                )
+            finally:
+                workbook.close()
+            payload = {"success": valid, "error_type": None}
+    except BaseException as exc:
+        # 诊断只保存异常类型，避免第三方异常正文夹带本机路径或业务数据。
+        payload = {"success": False, "error_type": type(exc).__name__}
+    try:
+        Path(diagnostics_value).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        return 2
+    return 0 if payload["success"] else 1
+
+
 # 删除模式不初始化 Qt、不创建单实例锁，也不会重建刚删除的数据目录。
 if DELETE_USER_DATA:
     raise SystemExit(_delete_all_user_data())
+
+BACKUP_SMOKE_TEST = "--backup-smoke-test" in sys.argv
+if BACKUP_SMOKE_TEST:
+    raise SystemExit(_run_backup_smoke_test())
 
 
 # 打包自检必须与正式用户数据完全隔离，否则并行构建可能争用单实例锁，

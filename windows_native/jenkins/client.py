@@ -175,7 +175,7 @@ class JenkinsClient:
             )
         return {
             "queue_id": int(match.group(1)),
-            "queue_url": urljoin(self.base_url, location),
+            "queue_url": self._validated_server_url(location),
         }
 
     def queue_item(self, queue_id: int) -> dict[str, Any]:
@@ -195,7 +195,7 @@ class JenkinsClient:
             "build_number": int(executable.get("number"))
             if isinstance(executable, dict) and executable.get("number") is not None
             else None,
-            "build_url": str(executable.get("url") or "")
+            "build_url": self._validated_server_url(executable.get("url"))
             if isinstance(executable, dict)
             else "",
         }
@@ -212,7 +212,7 @@ class JenkinsClient:
         )
         return {
             "number": int(value.get("number") or build_number),
-            "url": str(value.get("url") or ""),
+            "url": self._validated_server_url(value.get("url")),
             "building": bool(value.get("building")),
             "result": str(value.get("result") or ""),
             "duration_ms": int(value.get("duration") or 0),
@@ -233,8 +233,7 @@ class JenkinsClient:
             accepted={200, 201, 202, 302, 303},
         )
 
-    @staticmethod
-    def _project_from_api(raw: dict[str, Any], full_name: str) -> JenkinsProject:
+    def _project_from_api(self, raw: dict[str, Any], full_name: str) -> JenkinsProject:
         definitions: list[dict[str, Any]] = []
         for action in raw.get("actions") or []:
             if not isinstance(action, dict):
@@ -251,7 +250,7 @@ class JenkinsClient:
             full_name=full_name,
             name=str(raw.get("name") or full_name.rsplit("/", 1)[-1]),
             description=str(raw.get("description") or "").strip(),
-            url=str(raw.get("url") or "").strip(),
+            url=self._validated_server_url(raw.get("url")),
             project_class=str(raw.get("_class") or ""),
             buildable=bool(raw.get("buildable", True)),
             parameters=parameters,
@@ -530,19 +529,51 @@ class JenkinsClient:
             status_code=status,
         )
 
+    def _validated_server_url(self, value: Any) -> str:
+        """仅保留与已配置 Jenkins 同源的 HTTP(S) 导航地址。"""
+
+        if not isinstance(value, str):
+            return ""
+        raw = str(value or "").strip()
+        if not raw or any(
+            character == "\\"
+            or ord(character) <= 0x20
+            or ord(character) == 0x7F
+            for character in raw
+        ):
+            return ""
+        try:
+            normalized = urljoin(self.base_url, raw)
+            parsed = urlsplit(normalized)
+            _ = parsed.port
+        except (TypeError, ValueError):
+            return ""
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or not self._same_origin(self.base_url, normalized)
+        ):
+            return ""
+        return normalized
+
     @staticmethod
     def _same_origin(first: str, second: str) -> bool:
-        a = urlsplit(first)
-        b = urlsplit(second)
-        return (
-            a.scheme.lower(),
-            (a.hostname or "").lower(),
-            a.port or (443 if a.scheme == "https" else 80),
-        ) == (
-            b.scheme.lower(),
-            (b.hostname or "").lower(),
-            b.port or (443 if b.scheme == "https" else 80),
-        )
+        try:
+            a = urlsplit(first)
+            b = urlsplit(second)
+            return (
+                a.scheme.lower(),
+                (a.hostname or "").lower(),
+                a.port or (443 if a.scheme == "https" else 80),
+            ) == (
+                b.scheme.lower(),
+                (b.hostname or "").lower(),
+                b.port or (443 if b.scheme == "https" else 80),
+            )
+        except ValueError:
+            return False
 
     @staticmethod
     def _raise_if_cancelled(cancel_event: threading.Event | None) -> None:

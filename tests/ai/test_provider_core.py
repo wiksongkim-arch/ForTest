@@ -4,8 +4,9 @@ import json
 import operator
 from pathlib import Path
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+import backend.ai.images as image_module
 from backend.ai.base import ProviderUnavailableError
 from backend.ai.images import ImageDownloadError, ImageWorkspace
 from backend.ai.registry import ProviderRegistry
@@ -511,6 +512,7 @@ class ProviderCoreTests(unittest.TestCase):
 
 def image_response(content_type="image/png", body=b"png"):
     response = Mock()
+    response.status_code = 200
     response.headers = {
         "Content-Type": content_type,
         "Content-Length": str(len(body)),
@@ -522,11 +524,25 @@ def image_response(content_type="image/png", body=b"png"):
     return response
 
 
+def public_image_resolver(_hostname, port, **_kwargs):
+    """测试只验证地址策略，不让伪会话触发真实 DNS。"""
+
+    return [(2, 1, 6, "", ("8.8.8.8", port))]
+
+
+def image_workspace(session, **kwargs):
+    return ImageWorkspace(
+        session=session,
+        resolver=public_image_resolver,
+        **kwargs,
+    )
+
+
 class ImageWorkspaceTests(unittest.TestCase):
     def test_rejected_content_type_leaves_no_download(self):
         session = Mock()
         session.get.return_value = image_response("text/html", b"not-an-image")
-        workspace = ImageWorkspace(session=session)
+        workspace = image_workspace(session)
         try:
             with self.assertRaises(ImageDownloadError):
                 workspace.download("https://example.test/image")
@@ -536,7 +552,7 @@ class ImageWorkspaceTests(unittest.TestCase):
 
     def test_more_than_five_images_is_rejected_before_network(self):
         session = Mock()
-        workspace = ImageWorkspace(session=session)
+        workspace = image_workspace(session)
         try:
             with self.assertRaises(ImageDownloadError):
                 workspace.download_many(
@@ -549,9 +565,78 @@ class ImageWorkspaceTests(unittest.TestCase):
         finally:
             workspace.close()
 
+    def test_batch_retries_a_transient_failure_without_exposing_the_url(self):
+        session = Mock()
+        session.get.side_effect = [
+            OSError("credential=do-not-leak"),
+            image_response("image/png", b"recovered"),
+        ]
+        delays: list[float] = []
+        workspace = image_workspace(
+            session,
+            retry_delays_seconds=(0.0, 0.0),
+            sleep=delays.append,
+        )
+        try:
+            downloaded = workspace.download_many(
+                ("https://example.test/signed.png?credential=do-not-leak",)
+            )
+
+            self.assertEqual(len(downloaded), 1)
+            self.assertEqual(downloaded[0].read_bytes(), b"recovered")
+            self.assertEqual(session.get.call_count, 2)
+            self.assertEqual(delays, [0.0])
+        finally:
+            workspace.close()
+
+    def test_batch_preserves_successful_images_when_another_exhausts_retries(self):
+        session = Mock()
+        session.get.side_effect = [
+            image_response("image/png", b"available"),
+            OSError("first"),
+            OSError("second"),
+            OSError("third"),
+        ]
+        workspace = image_workspace(
+            session,
+            retry_delays_seconds=(0.0, 0.0),
+            sleep=lambda _delay: None,
+        )
+        try:
+            downloaded = workspace.download_many(
+                (
+                    "https://example.test/available.png",
+                    "https://example.test/unavailable.png",
+                )
+            )
+
+            self.assertEqual(len(downloaded), 1)
+            self.assertEqual(downloaded[0].read_bytes(), b"available")
+            self.assertEqual(session.get.call_count, 4)
+        finally:
+            workspace.close()
+
+    def test_batch_raises_when_every_image_exhausts_retries(self):
+        session = Mock()
+        session.get.side_effect = [OSError("network")] * 3
+        workspace = image_workspace(
+            session,
+            retry_delays_seconds=(0.0, 0.0),
+            sleep=lambda _delay: None,
+        )
+        try:
+            with self.assertRaises(ImageDownloadError) as raised:
+                workspace.download_many(
+                    ("https://example.test/unavailable.png?token=private",)
+                )
+            self.assertNotIn("private", str(raised.exception))
+            self.assertEqual(session.get.call_count, 3)
+        finally:
+            workspace.close()
+
     def test_initial_non_https_url_is_rejected_before_network(self):
         session = Mock()
-        workspace = ImageWorkspace(session=session)
+        workspace = image_workspace(session)
         try:
             with self.assertRaises(ImageDownloadError) as raised:
                 workspace.download(
@@ -567,7 +652,7 @@ class ImageWorkspaceTests(unittest.TestCase):
         response = image_response("image/jpeg", b"jpeg")
         response.url = "https://example.test/server-name.exe?token=secret"
         session.get.return_value = response
-        workspace = ImageWorkspace(session=session)
+        workspace = image_workspace(session)
         try:
             downloaded = workspace.download(
                 "https://example.test/server-name.exe?token=secret"
@@ -575,7 +660,7 @@ class ImageWorkspaceTests(unittest.TestCase):
 
             session.get.assert_called_once_with(
                 "https://example.test/server-name.exe?token=secret",
-                allow_redirects=True,
+                allow_redirects=False,
                 timeout=(5, 30),
                 verify=True,
                 stream=True,
@@ -589,48 +674,125 @@ class ImageWorkspaceTests(unittest.TestCase):
 
     def test_more_than_three_redirects_is_rejected(self):
         session = Mock()
-        response = image_response()
-        response.history = []
+        responses = []
         for index in range(4):
-            redirect = Mock()
-            redirect.url = f"https://example.test/redirect-{index}"
-            response.history.append(redirect)
-        session.get.return_value = response
-        workspace = ImageWorkspace(session=session)
+            response = image_response()
+            response.status_code = 302
+            response.headers["Location"] = (
+                f"https://example.test/redirect-{index}"
+            )
+            responses.append(response)
+        session.get.side_effect = responses
+        workspace = image_workspace(session)
         try:
             with self.assertRaises(ImageDownloadError):
                 workspace.download("https://example.test/image")
+            self.assertEqual(session.get.call_count, 4)
             self.assertEqual(list(workspace.path.iterdir()), [])
         finally:
             workspace.close()
 
-    def test_redirect_and_final_urls_must_remain_https(self):
-        for unsafe_location in ("history", "final"):
-            with self.subTest(unsafe_location=unsafe_location):
-                session = Mock()
-                response = image_response()
-                redirect = Mock()
-                redirect.url = "https://example.test/start"
-                response.history = [redirect]
-                if unsafe_location == "history":
-                    redirect.url = "http://example.test/redirect"
-                else:
-                    response.url = "http://example.test/final"
-                session.get.return_value = response
-                workspace = ImageWorkspace(session=session)
-                try:
-                    with self.assertRaises(ImageDownloadError):
-                        workspace.download("https://example.test/image")
-                    self.assertEqual(list(workspace.path.iterdir()), [])
-                finally:
-                    workspace.close()
+    def test_redirect_to_non_https_is_rejected_before_second_request(self):
+        session = Mock()
+        response = image_response()
+        response.status_code = 302
+        response.headers["Location"] = "http://example.test/redirect"
+        session.get.return_value = response
+        workspace = image_workspace(session)
+        try:
+            with self.assertRaises(ImageDownloadError):
+                workspace.download("https://example.test/image")
+            self.assertEqual(session.get.call_count, 1)
+            self.assertEqual(list(workspace.path.iterdir()), [])
+        finally:
+            workspace.close()
+
+    def test_loopback_literal_is_rejected_before_network(self):
+        session = Mock()
+        workspace = image_workspace(session)
+        try:
+            with self.assertRaises(ImageDownloadError):
+                workspace.download("https://127.0.0.1/internal.png")
+            session.get.assert_not_called()
+        finally:
+            workspace.close()
+
+    def test_hostname_resolving_to_private_address_is_rejected_before_network(self):
+        session = Mock()
+        workspace = ImageWorkspace(
+            session=session,
+            resolver=lambda _host, port, **_kwargs: [
+                (2, 1, 6, "", ("10.0.0.8", port))
+            ],
+        )
+        try:
+            with self.assertRaises(ImageDownloadError):
+                workspace.download("https://intranet.example/image.png")
+            session.get.assert_not_called()
+        finally:
+            workspace.close()
+
+    def test_redirect_to_link_local_is_rejected_before_second_request(self):
+        session = Mock()
+        response = image_response()
+        response.status_code = 302
+        response.headers["Location"] = "https://169.254.169.254/metadata"
+        session.get.return_value = response
+        workspace = image_workspace(session)
+        try:
+            with self.assertRaises(ImageDownloadError):
+                workspace.download("https://example.test/image")
+            self.assertEqual(session.get.call_count, 1)
+        finally:
+            workspace.close()
+
+    def test_real_requests_session_uses_pinned_transport(self):
+        session = image_module.requests.Session()
+        session.get = Mock(side_effect=AssertionError("must not resolve twice"))
+        response = image_response(body=b"pinned")
+        workspace = ImageWorkspace(
+            session=session,
+            resolver=public_image_resolver,
+        )
+        try:
+            with patch.object(
+                image_module._PinnedHTTPSAdapter,
+                "send",
+                return_value=response,
+            ) as send:
+                downloaded = workspace.download(
+                    "https://example.test/image.png"
+                )
+
+            self.assertEqual(downloaded.read_bytes(), b"pinned")
+            session.get.assert_not_called()
+            self.assertEqual(send.call_count, 1)
+        finally:
+            workspace.close()
+
+    def test_pinned_connection_uses_vetted_ip_but_keeps_tls_hostname(self):
+        connection = image_module._PinnedHTTPSConnection(
+            "example.test",
+            443,
+            pinned_addresses=("8.8.8.8",),
+        )
+        sentinel_socket = object()
+        with patch(
+            "urllib3.connection.connection.create_connection",
+            return_value=sentinel_socket,
+        ) as create_connection:
+            created = connection._new_conn()
+
+        self.assertIs(created, sentinel_socket)
+        self.assertEqual(create_connection.call_args.args[0], ("8.8.8.8", 443))
+        self.assertEqual(connection.host, "example.test")
 
     def test_declared_size_over_ten_mib_is_rejected_before_streaming(self):
         session = Mock()
         response = image_response()
         response.headers["Content-Length"] = str(10 * 1024 * 1024 + 1)
         session.get.return_value = response
-        workspace = ImageWorkspace(session=session)
+        workspace = image_workspace(session)
         try:
             with self.assertRaises(ImageDownloadError):
                 workspace.download("https://example.test/image")
@@ -648,7 +810,7 @@ class ImageWorkspaceTests(unittest.TestCase):
             b"x",
         ]
         session.get.return_value = response
-        workspace = ImageWorkspace(session=session)
+        workspace = image_workspace(session)
         try:
             with self.assertRaises(ImageDownloadError):
                 workspace.download("https://example.test/image")
@@ -667,7 +829,7 @@ class ImageWorkspaceTests(unittest.TestCase):
 
         response.iter_content.side_effect = broken_stream
         session.get.return_value = response
-        workspace = ImageWorkspace(session=session)
+        workspace = image_workspace(session)
         try:
             with self.assertRaises(ImageDownloadError) as raised:
                 workspace.download("https://example.test/image")
@@ -678,7 +840,7 @@ class ImageWorkspaceTests(unittest.TestCase):
 
     def test_close_is_idempotent_and_prevents_future_network(self):
         session = Mock()
-        workspace = ImageWorkspace(session=session)
+        workspace = image_workspace(session)
         path = workspace.path
 
         workspace.close()

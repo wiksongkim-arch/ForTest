@@ -1437,7 +1437,7 @@ def test_window_branding_is_compact_and_language_switches_immediately(workflow):
     window, _service, _manager, _theme = workflow
     assert window.windowTitle() == "ForTest"
     assert not window.findChildren(QLabel, "brandIcon")
-    assert any(label.text() == "ForTest v0.2.13" for label in window.findChildren(QLabel))
+    assert any(label.text() == "ForTest v0.2.14" for label in window.findChildren(QLabel))
 
     window.change_language("en_US")
     assert [window.nav_group.button(index).text() for index in range(4)] == [

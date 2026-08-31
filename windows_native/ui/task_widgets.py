@@ -55,6 +55,10 @@ _REASONING_LABELS = {
     "ultra": "超强",
 }
 _SPEED_LABELS = {"standard": "标准", "fast": "快速"}
+_PARTIAL_IMAGE_LOG = re.compile(
+    r"^区块图片部分下载失败（成功 (?P<downloaded>\d+)/(?P<total>\d+)），"
+    r"继续处理可用图片与文本需求$"
+)
 
 
 def localized_model_value(kind: str, value: object) -> str:
@@ -78,6 +82,16 @@ def localized_log_message(message: object) -> str:
         return tr(
             "推理速度：{value}",
             value=localized_model_value("speed", text.split("：", 1)[1]),
+        )
+    if text == "区块图片下载失败，继续处理文本需求":
+        return tr(text)
+    partial_image = _PARTIAL_IMAGE_LOG.fullmatch(text)
+    if partial_image:
+        return tr(
+            "区块图片部分下载失败（成功 {downloaded}/{total}），"
+            "继续处理可用图片与文本需求",
+            downloaded=partial_image.group("downloaded"),
+            total=partial_image.group("total"),
         )
     return text
 

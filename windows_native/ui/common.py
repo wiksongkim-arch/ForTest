@@ -6,6 +6,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from PySide6.QtCore import (
     QPoint,
@@ -387,6 +388,45 @@ def open_target(target: str) -> None:
         QDesktopServices.openUrl(QUrl(target))
     else:
         QDesktopServices.openUrl(QUrl.fromLocalFile(target))
+
+
+def is_remote_target(target: str) -> bool:
+    """判断远程导航目标是否为结构完整的 HTTP(S) 地址。"""
+
+    return bool(_validated_remote_target(target))
+
+
+def open_remote_target(target: str) -> bool:
+    """只打开远程 HTTP(S) 地址，绝不回退到本地文件处理器。"""
+
+    normalized = _validated_remote_target(target)
+    if not normalized:
+        return False
+    return bool(QDesktopServices.openUrl(QUrl(normalized)))
+
+
+def _validated_remote_target(target: str) -> str:
+    normalized = str(target or "").strip()
+    if not normalized or any(
+        character == "\\"
+        or ord(character) <= 0x20
+        or ord(character) == 0x7F
+        for character in normalized
+    ):
+        return ""
+    try:
+        parsed = urlsplit(normalized)
+        _ = parsed.port
+    except ValueError:
+        return ""
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return ""
+    return normalized
 
 
 def reveal_in_file_manager(target: str | Path) -> None:

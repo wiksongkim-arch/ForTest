@@ -307,6 +307,25 @@ $artifactPrivacyReport = Join-Path $buildRoot 'package-privacy-artifact.json'
     --report $artifactPrivacyReport
 if ($LASTEXITCODE -ne 0) { throw 'Packaged privacy audit failed.' }
 
+Write-Step 'Running packaged local backup diagnostics'
+$backupDiagnostics = Join-Path $buildRoot 'packaged-backup-diagnostics.json'
+if (Test-Path -LiteralPath $backupDiagnostics) {
+    Remove-Item -LiteralPath $backupDiagnostics -Force
+}
+Invoke-CheckedProcess `
+    -FilePath $packagedExe `
+    -ArgumentList @('--backup-smoke-test', '--diagnostics-file', "`"$backupDiagnostics`"") `
+    -WorkingDirectory (Split-Path -Parent $packagedExe) `
+    -TimeoutSeconds 30 `
+    -Hidden
+if (-not (Test-Path -LiteralPath $backupDiagnostics)) {
+    throw 'Packaged application did not write local backup diagnostics.'
+}
+$backupView = Get-Content -LiteralPath $backupDiagnostics -Raw -Encoding utf8 | ConvertFrom-Json
+if (-not $backupView.success -or $backupView.error_type) {
+    throw 'Packaged local backup diagnostics failed.'
+}
+
 Write-Step 'Running packaged native startup diagnostics'
 $diagnostics = Join-Path $buildRoot 'packaged-diagnostics.json'
 if (Test-Path -LiteralPath $diagnostics) {

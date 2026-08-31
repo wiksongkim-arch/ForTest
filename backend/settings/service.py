@@ -154,6 +154,7 @@ class SettingsService:
             settings = AppSettings.model_validate(
                 self._load_repository().model_dump()
             )
+            settings = self._resolve_runtime_paths(settings)
             configuration_api_keys = {}
             for configuration in settings.ai.configurations:
                 value, _source = self._get_ai_configuration_secret_unlocked(
@@ -169,6 +170,24 @@ class SettingsService:
                 ai_configuration_api_keys=configuration_api_keys,
             )
             return SettingsSnapshot(settings=settings, secrets=resolved)
+
+    def _resolve_runtime_paths(self, settings: AppSettings) -> AppSettings:
+        """把旧版相对输出目录稳定绑定到用户数据根目录，不依赖进程工作目录。"""
+
+        raw = Path(settings.document.local_output_dir).expanduser()
+        if raw.is_absolute():
+            return settings
+        settings_parent = self.repository.path.parent.resolve()
+        data_root = (
+            settings_parent.parent
+            if settings_parent.name.casefold() == "data"
+            else settings_parent
+        )
+        resolved = (data_root / raw).resolve()
+        document = settings.document.model_copy(
+            update={"local_output_dir": str(resolved)}
+        )
+        return settings.model_copy(update={"document": document})
 
     def update_document(self, document: DocumentSettings) -> AppSettings:
         return self.update_group("document", document)

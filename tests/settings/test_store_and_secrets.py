@@ -71,6 +71,27 @@ class SecretAndStoreTests(unittest.TestCase):
         self.assertNotIn("old-document-secret", repr(before))
         self.assertNotIn("old-document-secret", before.model_dump_json())
 
+    def test_snapshot_resolves_legacy_relative_output_under_user_data_root(self):
+        data_root = Path(self.temp.name) / "UserData"
+        repository = SettingsRepository(data_root / "data" / "settings.json")
+        service = SettingsService(repository, self.secrets, environment={})
+        settings = default_settings().model_copy(
+            update={
+                "document": default_settings().document.model_copy(
+                    update={"local_output_dir": "output"}
+                )
+            }
+        )
+        repository.save(settings)
+
+        snapshot = service.snapshot()
+
+        self.assertEqual(
+            Path(snapshot.settings.document.local_output_dir),
+            (data_root / "output").resolve(),
+        )
+        self.assertEqual(service.load().document.local_output_dir, "output")
+
     def test_failed_replace_keeps_last_valid_json(self):
         self.service.repository.save(default_settings())
         original = json.loads(self.path.read_text(encoding="utf-8"))

@@ -27,7 +27,12 @@ from PySide6.QtWidgets import (
 )
 
 from windows_native.i18n import tr, translate_widget_tree
-from windows_native.ui.common import BasePage, open_target, status_label
+from windows_native.ui.common import (
+    BasePage,
+    is_remote_target,
+    open_remote_target,
+    status_label,
+)
 from windows_native.ui.task_widgets import StatusIndicator
 
 
@@ -333,15 +338,15 @@ class DeploymentDetailsDialog(QDialog):
         translate_widget_tree(self)
 
     def _selection_changed(self, current, _previous) -> None:
-        self.open_build.setEnabled(
-            current is not None and bool(current.data(3, Qt.UserRole))
-        )
+        target = str(current.data(3, Qt.UserRole) or "") if current else ""
+        self.open_build.setEnabled(is_remote_target(target))
 
     def _open_selected_build(self) -> None:
         current = self.tree.currentItem()
         target = str(current.data(3, Qt.UserRole) or "") if current else ""
         if target:
-            open_target(target)
+            # 历史任务可能保留旧版本未校验的数据；点击入口再次执行协议白名单。
+            open_remote_target(target)
 
 
 class DeploymentLogsDialog(QDialog):

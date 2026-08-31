@@ -14,7 +14,7 @@ import windows_native.ui.document_page as document_page_module
 from utils.default_templates import CONTENT_TEMPLATE, OUTPUT_TEMPLATE
 from windows_native.i18n import set_language, tr
 from windows_native.ui.document_page import DocumentSettingsPanel
-from windows_native.ui.task_widgets import NewTaskDialog
+from windows_native.ui.task_widgets import NewTaskDialog, localized_log_message
 
 
 @pytest.fixture(scope="module")
@@ -166,12 +166,21 @@ def test_new_iteration_copy_has_traditional_chinese_and_english_catalogs():
         assert tr("需求文档") == "需求文件"
         assert tr("查看默认模板文档") == "查看預設範本文件"
         assert tr("恢复默认") == "恢復預設"
+        assert localized_log_message(
+            "区块图片部分下载失败（成功 2/5），继续处理可用图片与文本需求"
+        ) == "區塊圖片部分下載失敗（成功 2/5），繼續處理可用圖片與文字需求"
 
         set_language("en_US")
         assert tr("需求文档") == "Requirements Document"
         assert tr("选择文件") == "Select File"
         assert tr("查看默认模板文档") == "Show Default Template"
         assert tr("恢复默认") == "Restore Default"
+        assert localized_log_message(
+            "区块图片下载失败，继续处理文本需求"
+        ) == (
+            "Block images could not be downloaded. "
+            "Continuing with the text requirements."
+        )
         assert tr(
             "选择环境、项目和分支后，任务名称会自动附加对应组合。"
         ) == (

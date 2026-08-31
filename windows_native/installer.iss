@@ -1,6 +1,6 @@
-; ForTest 0.2.13 纯原生 Windows x64 安装器。
+; ForTest 0.2.14 纯原生 Windows x64 安装器。
 #ifndef MyAppVersion
-  #define MyAppVersion "0.2.13"
+  #define MyAppVersion "0.2.14"
 #endif
 
 #define MyAppName "ForTest"
@@ -46,6 +46,8 @@ Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 Source: "dist\ForTest\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [InstallDelete]
+; 覆盖升级必须先移除旧 PyInstaller 运行时，避免过期二进制和包元数据污染新版本。
+Type: filesandordirs; Name: "{app}\_internal"
 ; 使用原 AppId 覆盖升级，但程序迁移到 ForTest 目录；用户数据目录不在此路径内。
 Type: filesandordirs; Name: "{localappdata}\Programs\QAQ"
 Type: files; Name: "{autodesktop}\QAQ.lnk"

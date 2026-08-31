@@ -226,6 +226,112 @@ def test_client_refuses_cross_origin_redirects():
     assert caught.value.code == "unsafe_redirect"
 
 
+@pytest.mark.parametrize(
+    "unsafe_url",
+    [
+        r"C:\Windows\System32\calc.exe",
+        r"\\attacker.invalid\share\payload.exe",
+        "file:///C:/Windows/System32/calc.exe",
+        "https://attacker.invalid/job/demo/18/",
+        "https://user@jenkins.example.com/job/demo/18/",
+        "https://jenkins.example.com\\@attacker.invalid/payload",
+    ],
+)
+def test_queue_item_clears_unsafe_server_supplied_build_url(unsafe_url):
+    session = FakeSession(
+        lambda _url, _kwargs: FakeResponse(
+            200,
+            {
+                "id": 42,
+                "executable": {"number": 18, "url": unsafe_url},
+            },
+        )
+    )
+    client = JenkinsClient(
+        "https://jenkins.example.com/ci/",
+        "bot",
+        "token",
+        session=session,
+    )
+
+    assert client.queue_item(42)["build_url"] == ""
+
+
+@pytest.mark.parametrize(
+    ("server_url", "expected"),
+    [
+        (
+            "https://jenkins.example.com/ci/job/demo/18/",
+            "https://jenkins.example.com/ci/job/demo/18/",
+        ),
+        (
+            "job/demo/18/",
+            "https://jenkins.example.com/ci/job/demo/18/",
+        ),
+        (
+            "//jenkins.example.com/ci/job/demo/18/",
+            "https://jenkins.example.com/ci/job/demo/18/",
+        ),
+    ],
+)
+def test_queue_item_normalizes_legitimate_same_origin_build_url(
+    server_url,
+    expected,
+):
+    session = FakeSession(
+        lambda _url, _kwargs: FakeResponse(
+            200,
+            {
+                "id": 42,
+                "executable": {"number": 18, "url": server_url},
+            },
+        )
+    )
+    client = JenkinsClient(
+        "https://jenkins.example.com/ci/",
+        "bot",
+        "token",
+        session=session,
+    )
+
+    assert client.queue_item(42)["build_url"] == expected
+
+
+def test_project_and_build_status_urls_share_the_same_origin_policy():
+    def router(url, _kwargs):
+        path = urlsplit(url).path
+        if path.endswith("/18/api/json"):
+            return FakeResponse(
+                200,
+                {
+                    "number": 18,
+                    "url": r"\\attacker.invalid\share\payload.exe",
+                    "building": False,
+                    "result": "SUCCESS",
+                },
+            )
+        return FakeResponse(
+            200,
+            {
+                "name": "demo",
+                "fullName": "demo",
+                "url": "https://attacker.invalid/job/demo/",
+                "buildable": True,
+                "actions": [],
+            },
+        )
+
+    client = JenkinsClient(
+        "https://jenkins.example.com/ci/",
+        "bot",
+        "token",
+        session=FakeSession(router),
+    )
+
+    assert client.project_details("demo").url == ""
+    assert client.build_status("demo", 18)["url"] == ""
+
+
 def test_build_trigger_queue_poll_build_poll_and_stop_contract():
     def router(url, kwargs):
         path = urlsplit(url).path

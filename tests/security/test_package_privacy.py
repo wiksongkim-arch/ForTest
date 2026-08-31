@@ -94,3 +94,16 @@ def test_native_build_runs_source_and_artifact_privacy_gates():
     assert "package_privacy.py') source" in build
     assert "package_privacy.py') artifact" in build
     assert "include_py_files=False" in spec
+
+
+def test_installer_cleans_stale_frozen_runtime_and_build_smokes_local_backup():
+    installer = (PROJECT_ROOT / "windows_native" / "installer.iss").read_text(
+        encoding="utf-8"
+    )
+    build = (PROJECT_ROOT / "windows_native" / "build.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'Type: filesandordirs; Name: "{app}\\_internal"' in installer
+    assert "--backup-smoke-test" in build
+    assert "packaged-backup-diagnostics.json" in build
