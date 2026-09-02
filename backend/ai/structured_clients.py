@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import quote
 
 import requests
+import httpx
 
 from backend.ai.base import ProviderResponseError, ProviderUnavailableError
 from backend.ai.types import StageEvidence
@@ -79,7 +80,12 @@ class _StructuredHTTPClient:
         self.configuration = configuration
         self.name = ProviderName(configuration.provider.value)
         self.api_key = api_key.strip() if isinstance(api_key, str) else ""
-        self.session = session if session is not None else requests.Session()
+        # 自有 httpx 客户端关闭时会主动打断在途套接字，避免取消后遗留线程。
+        self.session = (
+            session
+            if session is not None
+            else httpx.Client(verify=True, follow_redirects=False)
+        )
         self._owns_session = session is None
         self._closed = False
         self._cancelled = False
@@ -120,6 +126,8 @@ class _StructuredHTTPClient:
         started = monotonic()
         prepared_user = user_prompt
         for retry_count in range(2):
+            if self._closed or self._cancelled:
+                raise ProviderUnavailableError("AI 配置客户端已关闭")
             payload = self._payload(
                 stage,
                 system_prompt,
@@ -128,13 +136,19 @@ class _StructuredHTTPClient:
                 images,
             )
             try:
+                arguments = {
+                    "json": payload,
+                    "headers": self._headers(),
+                    "timeout": self.configuration.timeout_seconds,
+                }
                 response = self.session.post(
                     self._endpoint(),
-                    json=payload,
-                    headers=self._headers(),
-                    timeout=self.configuration.timeout_seconds,
-                    verify=True,
-                    allow_redirects=False,
+                    **arguments,
+                    **(
+                        {}
+                        if self._owns_session
+                        else {"verify": True, "allow_redirects": False}
+                    ),
                 )
                 # 不跟随携带密钥的重定向，同时兼容不提供状态码的测试替身。
                 status = getattr(response, "status_code", None)
@@ -157,7 +171,16 @@ class _StructuredHTTPClient:
             except Exception as exc:
                 status = getattr(getattr(exc, "response", None), "status_code", None)
                 retryable = (
-                    isinstance(exc, (ValueError, requests.Timeout, requests.ConnectionError))
+                    isinstance(
+                        exc,
+                        (
+                            ValueError,
+                            requests.Timeout,
+                            requests.ConnectionError,
+                            httpx.TimeoutException,
+                            httpx.NetworkError,
+                        ),
+                    )
                     or type(status) is int
                     and (status in {408, 429} or 500 <= status <= 599)
                 )

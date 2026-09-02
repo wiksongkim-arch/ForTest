@@ -11,8 +11,16 @@ import traceback
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from windows_native.paths import prepare_runtime, project_root, remove_user_data
-from windows_native.product import PRODUCT_NAME, PRODUCT_VERSION
+from windows_native.paths import (
+    app_data_root,
+    legacy_app_data_root,
+    older_brand_app_data_root,
+    prepare_runtime,
+    previous_app_data_root,
+    project_root,
+    remove_user_data,
+)
+from windows_native.product import PRODUCT_NAME, PRODUCT_VERSION, eim_feature_enabled
 from windows_native.process_policy import (
     install_hidden_subprocess_policy,
     is_policy_installed,
@@ -33,6 +41,44 @@ def _argument_value(name: str) -> str | None:
 
 
 DELETE_USER_DATA = "--delete-user-data" in sys.argv
+EIM_ENABLED = eim_feature_enabled()
+
+
+def _user_secret_names() -> set[str]:
+    """返回卸载时应移除的固定及配置级密钥名称。"""
+
+    from backend.settings.service import ai_configuration_secret_name
+
+    names = {
+        "document_mcp_url",
+        "spreadsheet_mcp_url",
+        "minimax_api_key",
+        "openai_compatible_api_key",
+        "codex_api_key",
+        "jenkins_api_token",
+    }
+    for root in (
+        app_data_root(),
+        previous_app_data_root(),
+        older_brand_app_data_root(),
+        legacy_app_data_root(),
+    ):
+        try:
+            payload = json.loads(
+                (root / "data" / "settings.json").read_text(encoding="utf-8")
+            )
+            configurations = (payload.get("ai") or {}).get("configurations") or []
+            for item in configurations:
+                configuration_id = (
+                    str(item.get("id") or "").strip()
+                    if isinstance(item, dict)
+                    else ""
+                )
+                if configuration_id:
+                    names.add(ai_configuration_secret_name(configuration_id))
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            continue
+    return names
 
 
 def _delete_all_user_data() -> int:
@@ -42,14 +88,10 @@ def _delete_all_user_data() -> int:
         from backend.settings.secrets import KeyringSecretStore
 
         secrets = KeyringSecretStore()
-        for name in (
-            "document_mcp_url",
-            "spreadsheet_mcp_url",
-            "minimax_api_key",
-            "openai_compatible_api_key",
-            "codex_api_key",
-            "jenkins_api_token",
-        ):
+        names = _user_secret_names()
+        # 配置文件损坏或已缺失时，仍从本产品凭据命名空间清理孤立动态密钥。
+        names.update(secrets.list_names("ai_config:"))
+        for name in names:
             secrets.delete(name)
         remove_user_data()
         return 0
@@ -119,6 +161,7 @@ if BACKUP_SMOKE_TEST:
 # 还可能把正式任务误判为上次异常中断。一次性目录会在自检退出后删除。
 SMOKE_TEST = "--smoke-test" in sys.argv
 FULL_STARTUP_SMOKE = "--full-startup-smoke" in sys.argv
+AUTOSTART = "--autostart" in sys.argv
 DIAGNOSTIC_TEST = SMOKE_TEST or FULL_STARTUP_SMOKE
 _DIAGNOSTICS_RUNTIME = (
     TemporaryDirectory(prefix="ForTest-smoke-") if DIAGNOSTIC_TEST else None
@@ -163,6 +206,9 @@ def main() -> int:
     deployment_service = None
     splash = None
     acquired = False
+    lifecycle = None
+    lifecycle_heartbeat_timer = None
+    exit_code = 1
     try:
         # 单实例检查走轻量模块，不再因导入主窗口而阻塞启动页首帧。
         from windows_native.single_instance import (
@@ -182,6 +228,51 @@ def main() -> int:
             if not acquired:
                 show_duplicate_instance_message()
                 return 0
+
+        from windows_native.lifecycle import (
+            LifecycleDiagnostics,
+            activate_lifecycle,
+            current_exit_reason,
+            lifecycle_event,
+            request_application_exit,
+        )
+
+        launch_mode = (
+            "diagnostic"
+            if DIAGNOSTIC_TEST
+            else "autostart"
+            if AUTOSTART
+            else "interactive"
+        )
+        lifecycle = LifecycleDiagnostics(
+            DATA_ROOT,
+            version=PRODUCT_VERSION,
+            diagnostic_mode=DIAGNOSTIC_TEST,
+        )
+        lifecycle.start(launch_mode=launch_mode)
+        activate_lifecycle(lifecycle)
+
+        # 覆盖 Qt 自身退出、末窗口关闭和 Windows 注销/关机三类入口。
+        app.aboutToQuit.connect(
+            lambda: lifecycle_event(
+                "qt_about_to_quit",
+                reason=current_exit_reason() or "not_recorded",
+            )
+        )
+        app.lastWindowClosed.connect(
+            lambda: lifecycle_event("qt_last_window_closed")
+        )
+        commit_data_request = getattr(app, "commitDataRequest", None)
+        if commit_data_request is not None:
+            commit_data_request.connect(
+                lambda _manager: request_application_exit("windows_session_end")
+            )
+        save_state_request = getattr(app, "saveStateRequest", None)
+        if save_state_request is not None:
+            save_state_request.connect(
+                lambda _manager: lifecycle_event("windows_session_state_save")
+            )
+
         from windows_native.ui.startup_splash import (
             StartupLoader,
             StartupSplash,
@@ -192,7 +283,8 @@ def main() -> int:
         splash = StartupSplash(icon, PRODUCT_NAME, f"v{PRODUCT_VERSION}")
         splash.set_stage("", 6)
         splash.center_on_screen()
-        splash.show()
+        if not AUTOSTART:
+            splash.show()
         app.processEvents()
         splash_first_paint_seconds = time.perf_counter() - started_at
 
@@ -273,10 +365,11 @@ def main() -> int:
             task_manager,
             theme_manager,
             deployment_service,
-            onboarding_enabled=not DIAGNOSTIC_TEST,
+            onboarding_enabled=not DIAGNOSTIC_TEST and not AUTOSTART,
             background_refresh_enabled=not DIAGNOSTIC_TEST,
             startup_preloaded=startup_preload_complete,
             tray_enabled=not DIAGNOSTIC_TEST,
+            eim_enabled=EIM_ENABLED,
         )
         if startup_snapshot is not None:
             window.apply_startup_snapshot(startup_snapshot)
@@ -284,15 +377,43 @@ def main() -> int:
         app.processEvents()
         window.apply_adaptive_geometry()
         splash.set_stage(tr("准备就绪"), 100)
-        splash.finish(window)
+        if AUTOSTART and not DIAGNOSTIC_TEST:
+            # 开机启动只建立托盘和后台服务，不抢焦点或弹出向导。
+            splash.close()
+            window.hide()
+        else:
+            splash.finish(window)
         app.processEvents()
         first_paint_seconds = time.perf_counter() - started_at
+        lifecycle_event(
+            "main_window_ready",
+            startup_seconds=round(first_paint_seconds, 3),
+            visible=bool(window.isVisible()),
+            tray_usable=bool(window._tray_is_usable()),
+            close_behavior=window._preferred_close_behavior(),
+        )
 
         # 正式入口此时只安排向导判断和外部网络刷新，所有本地加载均已完成。
         if not SMOKE_TEST:
             window.start_background_services()
 
         from PySide6.QtCore import QThreadPool, QTimer
+
+        def sample_lifecycle_heartbeat() -> None:
+            state = app.applicationState()
+            lifecycle.heartbeat(
+                application_state=str(getattr(state, "name", state)),
+                window_visible=bool(window.isVisible()),
+                window_minimized=bool(window.isMinimized()),
+                tray_usable=bool(window._tray_is_usable()),
+            )
+
+        sample_lifecycle_heartbeat()
+        lifecycle_heartbeat_timer = QTimer(app)
+        lifecycle_heartbeat_timer.setInterval(30_000)
+        lifecycle_heartbeat_timer.timeout.connect(sample_lifecycle_heartbeat)
+        lifecycle_heartbeat_timer.start()
+        lifecycle_event("lifecycle_heartbeat_started", interval_seconds=30)
 
         diagnostics_path = _argument_value("--diagnostics-file")
         post_show_heartbeat = {
@@ -325,9 +446,20 @@ def main() -> int:
             diagnostics_timer.timeout.connect(sample_post_show)
             diagnostics_timer.start()
         if DIAGNOSTIC_TEST:
-            QTimer.singleShot(1500 if FULL_STARTUP_SMOKE else 900, app.quit)
+            def finish_diagnostics() -> None:
+                request_application_exit("diagnostic_timer")
+                app.quit()
+
+            QTimer.singleShot(
+                1500 if FULL_STARTUP_SMOKE else 900,
+                finish_diagnostics,
+            )
 
         result = app.exec()
+        exit_code = int(result)
+        lifecycle_event("qt_event_loop_returned", exit_code=exit_code)
+        if current_exit_reason() is None:
+            request_application_exit("qt_event_loop_returned_without_request")
         if diagnostics_timer is not None:
             diagnostics_timer.stop()
         if diagnostics_path:
@@ -384,6 +516,16 @@ def main() -> int:
             )
         return result
     except BaseException as exc:
+        exit_code = 1
+        if lifecycle is not None:
+            lifecycle.record_exception(
+                "main_exception",
+                type(exc),
+                exc,
+                exc.__traceback__,
+                context="startup" if "window" not in locals() else "event_loop",
+            )
+            lifecycle.request_exit("main_exception")
         if splash is not None:
             splash.close()
         log_path = DATA_ROOT / "logs" / "startup.log"
@@ -402,11 +544,24 @@ def main() -> int:
             )
         return 1
     finally:
+        if lifecycle_heartbeat_timer is not None:
+            lifecycle_heartbeat_timer.stop()
+        if lifecycle is not None:
+            lifecycle.record("shutdown_cleanup_started")
+        if "service" in locals() and service is not None:
+            service.stop_loaded_services()
         if task_manager is not None:
             task_manager.stop()
         if deployment_service is not None:
             deployment_service.stop()
         terminate_owned_subprocesses()
+        if lifecycle is not None:
+            lifecycle.record("shutdown_cleanup_finished")
+            lifecycle.finish(
+                exit_code=exit_code,
+                fallback_reason="main_returned",
+            )
+        # 活动会话标记必须先于单实例锁释放，避免快速重启把正常收尾误判为崩溃。
         if instance is not None and acquired:
             instance.release()
         if _DIAGNOSTICS_RUNTIME is not None:

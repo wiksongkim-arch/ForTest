@@ -707,6 +707,28 @@ class SettingsService:
 
             secret_name = ai_configuration_secret_name(prepared.id)
             previous_secret = self._read_saved_secret(secret_name)
+            bound_secret = self._get_ai_configuration_secret_unlocked(prepared.id)[0]
+            if (
+                existing is not None
+                and bound_secret
+                and not normalized_key
+                and not clear_api_key
+                and prepared.requires_api_key()
+                and (
+                    existing.provider,
+                    existing.protocol,
+                    existing.base_url,
+                )
+                != (
+                    prepared.provider,
+                    prepared.protocol,
+                    prepared.base_url,
+                )
+            ):
+                # 凭据只绑定原厂商和原端点，地址变化时必须由用户重新确认密钥。
+                raise SettingsValidationError(
+                    "修改 AI 提供商或接口地址时必须重新输入 API Key"
+                )
             secret_touched = bool(normalized_key) or clear_api_key
             try:
                 if normalized_key:

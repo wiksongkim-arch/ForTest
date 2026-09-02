@@ -106,7 +106,16 @@ class JenkinsDeploymentService:
             raise JenkinsError("请输入 Jenkins 用户名", code="missing_username")
         normalized_token = str(token or "").strip()
         if not normalized_token and keep_saved_token:
-            _saved_configuration, saved_token = self.configuration.load()
+            saved_configuration, saved_token = self.configuration.load()
+            if saved_configuration != JenkinsConfiguration(
+                base_url,
+                normalized_username,
+            ):
+                # Token 仅能沿用到原 Jenkins 地址和账号，防止静默发往新端点。
+                raise JenkinsError(
+                    "修改 Jenkins 地址或用户名时必须重新输入 API Token",
+                    code="missing_token",
+                )
             normalized_token = str(saved_token or "").strip()
         if not normalized_token:
             raise JenkinsError("请输入 Jenkins API Token", code="missing_token")

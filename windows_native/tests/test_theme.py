@@ -55,6 +55,7 @@ def test_stylesheet_contains_codex_style_light_palette():
     assert LIGHT_COLORS.surface in style
     assert "QTableWidget" in style
     assert "QPushButton#tableLink" in style
+    assert "QPushButton#primary:disabled" in style
 
 
 def test_themed_checkbox_draws_visible_box_and_whole_row_is_clickable(tmp_path):

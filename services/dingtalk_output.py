@@ -43,6 +43,23 @@ _DINGTALK_LITERAL_TRANSLATION = str.maketrans({"\uffe5": "\u00a5"})
 _OUTPUT_CLEAR_RANGE = "A:Z"
 
 
+def neutralize_spreadsheet_formula(value: str) -> str:
+    """保留原文，同时阻止 CSV、XLSX 和在线表格解释公式前缀。"""
+
+    formula_risk = _FORMULA_AFTER_PREFIX.match(value) is not None
+    excel_safe = "".join(
+        f"\\x{codepoint:02x}"
+        if (
+            codepoint < 32 and character not in {"\t", "\n"}
+        )
+        or 0x7F <= codepoint <= 0x9F
+        else character
+        for character in value
+        for codepoint in [ord(character)]
+    )
+    return "'" + excel_safe if formula_risk else excel_safe
+
+
 @dataclass(frozen=True)
 class OutputWriteResult:
     dingtalk_doc_url: str | None
@@ -410,28 +427,9 @@ class DingTalkOutputWriter:
                 # remote and local output so verification and backups retain
                 # one deterministic literal representation.
                 text = text.translate(_DINGTALK_LITERAL_TRANSLATION)
-                row[field] = cls._neutralize_formula(text)
+                row[field] = neutralize_spreadsheet_formula(text)
             normalized.append(row)
         return normalized
-
-    @staticmethod
-    def _neutralize_formula(value: str) -> str:
-        # Keep CSV and local XLSX semantics identical while preventing formula
-        # execution when generated content begins with a spreadsheet sigil.
-        # Excel/CSV importers may ignore leading whitespace/control characters,
-        # so inspect the first non-whitespace character without removing data.
-        formula_risk = _FORMULA_AFTER_PREFIX.match(value) is not None
-        excel_safe = "".join(
-            f"\\x{codepoint:02x}"
-            if (
-                codepoint < 32 and character not in {"\t", "\n"}
-            )
-            or 0x7F <= codepoint <= 0x9F
-            else character
-            for character in value
-            for codepoint in [ord(character)]
-        )
-        return "'" + excel_safe if formula_risk else excel_safe
 
     @staticmethod
     def _serialize_cases(
@@ -546,6 +544,11 @@ class DingTalkOutputWriter:
                 None,
                 "本地输出路径越界",
             )
+        # 已有文件可能是需求原件或历史结果；自动递增名称，绝不覆盖。
+        index = 2
+        while destination.exists():
+            destination = (root / f"{safe_title}-{index}.xlsx").resolve()
+            index += 1
         return destination
 
     @staticmethod

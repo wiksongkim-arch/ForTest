@@ -14,14 +14,26 @@ def test_preferences_have_safe_defaults_and_persist(tmp_path):
     assert preferences.get_theme_mode() == "system"
     assert preferences.get_task_parallelism() == 1
     assert preferences.get_close_behavior() == "ask"
+    assert preferences.get_eim_preferences() == {
+        "restore_running_tasks": True,
+        "log_retention_days": 30,
+    }
     assert preferences.set_theme_mode("light") == "light"
     assert preferences.set_task_parallelism(3) == 3
     assert preferences.set_close_behavior("minimize") == "minimize"
+    assert preferences.set_eim_preferences(
+        restore_running_tasks=False,
+        log_retention_days=45,
+    ) == {"restore_running_tasks": False, "log_retention_days": 45}
 
     reloaded = DesktopPreferences(tmp_path)
     assert reloaded.get_theme_mode() == "light"
     assert reloaded.get_task_parallelism() == 3
     assert reloaded.get_close_behavior() == "minimize"
+    assert reloaded.get_eim_preferences() == {
+        "restore_running_tasks": False,
+        "log_retention_days": 45,
+    }
 
 
 def test_updating_one_section_preserves_unknown_fields(tmp_path):
@@ -45,3 +57,8 @@ def test_preferences_reject_invalid_values(tmp_path):
         preferences.set_task_parallelism(0)
     with pytest.raises(ValueError):
         preferences.set_close_behavior("hide")
+    with pytest.raises(ValueError):
+        preferences.set_eim_preferences(
+            restore_running_tasks=True,
+            log_retention_days=0,
+        )

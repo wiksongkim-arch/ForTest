@@ -237,7 +237,7 @@ class CodexSettings(BaseModel):
     model: str = "gpt-5.4"
     reasoning_effort: ReasoningEffort = ReasoningEffort.high
     inference_speed: CodexInferenceSpeed = CodexInferenceSpeed.standard
-    timeout_seconds: int = Field(default=900, ge=30, le=3600)
+    timeout_seconds: int = Field(default=900, ge=1, le=3600)
     max_concurrency: int = Field(default=1, ge=1, le=4)
     cli_path: str | None = None
     use_dedicated_api_key: bool = False
@@ -272,7 +272,7 @@ class OpenAICompatibleSettings(BaseModel):
     base_url: str = "https://api.openai.com/v1"
     model: str = "gpt-5.4"
     response_format_mode: ResponseFormatMode = ResponseFormatMode.json_schema
-    timeout_seconds: int = Field(default=300, ge=30, le=900)
+    timeout_seconds: int = Field(default=300, ge=1, le=900)
     vision_enabled: bool = True
 
     _base_https = field_validator("base_url")(_https_url)
@@ -290,7 +290,7 @@ class AIConfiguration(BaseModel):
     protocol: AIProtocol = AIProtocol.openai_compatible
     model: str
     base_url: str = ""
-    timeout_seconds: int = Field(default=300, ge=30, le=3600)
+    timeout_seconds: int = Field(default=300, ge=1, le=3600)
     vision_enabled: bool = True
     response_format_mode: ResponseFormatMode = ResponseFormatMode.json_schema
     reasoning_effort: ReasoningEffort = ReasoningEffort.high

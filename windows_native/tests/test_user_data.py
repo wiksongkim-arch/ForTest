@@ -16,6 +16,7 @@ from windows_native.paths import (
     remove_user_data,
 )
 from windows_native.update_service import UpdateService
+from windows_native import main as native_main
 
 
 def test_legacy_data_migrates_without_deleting_source(monkeypatch, tmp_path: Path):
@@ -113,3 +114,26 @@ def test_explicit_user_data_removal_deletes_all_brand_roots(monkeypatch, tmp_pat
     assert not previous_root.exists()
     assert not older_brand_root.exists()
     assert not old_root.exists()
+
+
+def test_full_cleanup_enumerates_dynamic_ai_secret_names(monkeypatch, tmp_path: Path):
+    roots = [tmp_path / name for name in ("current", "previous", "older", "legacy")]
+    settings = roots[0] / "data" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(
+        '{"ai":{"configurations":[{"id":"custom-provider"}]}}',
+        encoding="utf-8",
+    )
+    for name, root in zip(
+        (
+            "app_data_root",
+            "previous_app_data_root",
+            "older_brand_app_data_root",
+            "legacy_app_data_root",
+        ),
+        roots,
+        strict=True,
+    ):
+        monkeypatch.setattr(native_main, name, lambda root=root: root)
+
+    assert "ai_config:custom-provider:api_key" in native_main._user_secret_names()

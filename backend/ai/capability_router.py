@@ -329,6 +329,44 @@ class CapabilityRouterProvider:
             self._clients[configuration.id] = client
             return client
 
+    def run_configuration_stage(
+        self,
+        configuration_id: str,
+        *,
+        stage: str,
+        system_prompt: str,
+        user_prompt: str,
+        schema: dict[str, Any],
+        images: tuple[Path, ...] = (),
+    ) -> tuple[dict[str, Any], StageEvidence]:
+        """按明确配置执行通用结构化步骤，供 EIM 等非用例业务安全复用。"""
+
+        configuration = next(
+            (
+                item
+                for item in self.snapshot.settings.ai.configurations
+                if item.id == configuration_id and item.deleted_at is None
+            ),
+            None,
+        )
+        if configuration is None or not self._configuration_usable(
+            configuration,
+            require_vision=bool(images),
+        ):
+            raise ProviderUnavailableError("指定 AI 配置不存在或不可用")
+        data, evidence = self._client(configuration).run_structured_stage(
+            stage,
+            system_prompt,
+            user_prompt,
+            schema,
+            images=images,
+        )
+        return data, replace(
+            evidence,
+            configuration_id=configuration.id,
+            configuration_name=configuration.name,
+        )
+
     def _create_client(
         self,
         configuration: AIConfiguration,

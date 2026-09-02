@@ -6,7 +6,7 @@ on:
       tag:
         description: Existing version tag to publish
         required: true
-        default: v0.2.15
+        default: v0.2.16
         type: string
 
 # 发布流程仅在发布步骤使用 GitHub 短期令牌，不保存长期凭据。
@@ -144,11 +144,12 @@ jobs:
 
           ## Highlights
 
+          - A default-off EIM Monitoring internal preview can archive DingTalk text, media, quoted-message, and Reaction events to Docs, Sheets, or AI Tables through isolated DWS v1.0.60 connections, immutable task versions, idempotent delivery, disconnect reconciliation, and optional budgeted AI steps.
           - Quick Deploy now redeploys the same task while retaining per-run history, and iteration deployments can be saved without starting.
           - Test Case Generation accepts multiple links, one per line, and creates and starts tasks in input order.
           - Appearance is now a Settings tab immediately after AI Settings.
           - Other settings now provide configurable GitHub Release checks and an explicit Update Now action with download verification.
-          - EIM monitoring remains unavailable because the mandatory self-message G0 gate is not satisfied by DWS v1.0.60.
+          - Desktop lifecycle diagnostics record tray/window/session/update exit paths, redacted faults, a 30-second heartbeat, and prior unclean shutdowns for unattended-exit investigation.
 
           ## Assets
 
@@ -160,6 +161,8 @@ jobs:
           ## Notes
 
           - Requires 64-bit Windows 10 version 1809 or later, or Windows 11.
+          - EIM has not completed real G0 acceptance in an independent test organization. Its entry and background runtime are disabled by default; only controlled testers should enable it with ``FORTEST_ENABLE_EIM=1``.
+          - DingTalk's official event stream excludes messages sent by the currently authorized OAuth account. ForTest shows this boundary in the UI and does not bypass it with polling or private APIs.
           - The installer is not Authenticode-signed and Windows may display a SmartScreen warning. Download only from this Release and verify SHA-256 first.
           - Jenkins, model, and document services require the user's own accounts, network access, data, and permissions.
           - Licensed under PolyForm Noncommercial 1.0.0. This is source-available software, not OSI open source; commercial use requires separate written permission.

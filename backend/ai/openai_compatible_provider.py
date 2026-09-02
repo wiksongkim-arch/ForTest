@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
+import httpx
 
 from backend.ai.base import ProviderResponseError, ProviderUnavailableError
 from backend.ai.types import (
@@ -105,11 +106,16 @@ def _is_retryable_stage_error(error: Exception) -> bool:
         return type(status_code) is int and (
             status_code in (408, 429) or 500 <= status_code <= 599
         )
+    if isinstance(error, httpx.HTTPStatusError):
+        status_code = error.response.status_code
+        return status_code in (408, 429) or 500 <= status_code <= 599
     return isinstance(
         error,
         (
             requests.Timeout,
             requests.ConnectionError,
+            httpx.TimeoutException,
+            httpx.NetworkError,
             TimeoutError,
             ConnectionError,
         ),
@@ -188,7 +194,12 @@ class OpenAICompatibleProvider:
             if isinstance(api_key, str) and api_key.strip()
             else None
         )
-        self._session = session if session is not None else requests.Session()
+        # httpx 的自有连接池可从另一线程关闭，停止任务时能中断在途请求。
+        self._session = (
+            session
+            if session is not None
+            else httpx.Client(verify=True, follow_redirects=False)
+        )
         self._owns_session = session is None
         self._closed = False
         self._cancelled = False
@@ -533,16 +544,18 @@ class OpenAICompatibleProvider:
             raise ProviderUnavailableError(
                 f"{self.name.value} API credential is not configured."
             )
-        response = self._session.post(
-            self._endpoint(),
-            json=payload,
-            headers={
+        arguments = {
+            "json": payload,
+            "headers": {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self._api_key}",
             },
-            timeout=self._timeout_seconds,
-            verify=True,
-            allow_redirects=False,
+            "timeout": self._timeout_seconds,
+        }
+        response = self._session.post(
+            self._endpoint(),
+            **arguments,
+            **({} if self._owns_session else {"verify": True, "allow_redirects": False}),
         )
         # requests 的真实响应状态码始终为整数；这里保留类型判断，兼容测试替身。
         status_code = getattr(response, "status_code", None)

@@ -30,6 +30,13 @@ class LazyNativeService:
             raise AttributeError(name)
         return getattr(self._resolve(), name)
 
+    def stop_loaded_services(self) -> None:
+        """退出时只停止已解析服务，避免未使用功能反而延长关机。"""
+
+        instance = self._instance
+        if instance is not None:
+            instance.stop_eim()
+
 
 class LazyJenkinsDeploymentService:
     """线程安全地解析 Jenkins、Keyring 与调度器依赖。"""

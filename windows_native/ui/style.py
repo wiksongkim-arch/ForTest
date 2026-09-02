@@ -183,6 +183,11 @@ QPushButton#primary:hover {
     background: $accent_hover;
     border-color: $accent_hover;
 }
+QPushButton#primary:disabled {
+    color: $disabled;
+    background: $surface_hover;
+    border-color: $border;
+}
 QPushButton#danger, QPushButton#dangerCompact {
     color: $danger;
     border-color: $danger;
@@ -203,6 +208,21 @@ QPushButton#scheduleField {
 }
 QPushButton#iconButton, QPushButton#backButton {
     background: transparent;
+}
+QPushButton#helpButton {
+    min-width: 24px;
+    min-height: 24px;
+    max-width: 24px;
+    max-height: 24px;
+    padding: 0;
+    border-radius: 12px;
+    color: $accent;
+    font-weight: 700;
+    background: $surface;
+}
+QPushButton#helpButton:hover {
+    background: $accent_soft;
+    border-color: $accent;
 }
 QPushButton#nav {
     min-height: 38px;

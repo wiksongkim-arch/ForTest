@@ -96,7 +96,7 @@ class JenkinsConfigPanel(QWidget):
             self.saved.emit(dict(view))
 
         def failure(message: str) -> None:
-            self.status.setText(tr("连接失败：{message}", message=message))
+            self.status.setText(tr("连接失败：{message}", message=tr(message)))
 
         self.page.run_async(
             lambda: self.service.validate_and_save_configuration(

@@ -104,3 +104,41 @@ def test_failed_validation_keeps_previous_configuration(tmp_path):
 class _FailingClient:
     def verify_connection(self):
         raise JenkinsError("认证失败", code="authentication_failed")
+
+
+def test_saved_jenkins_token_is_bound_to_address_and_username(tmp_path):
+    calls: list[tuple[str, str, str]] = []
+
+    class _SuccessfulClient:
+        def __init__(self, base_url: str, username: str, token: str):
+            calls.append((base_url, username, token))
+
+        def verify_connection(self):
+            return {"ok": True}
+
+    service = JenkinsDeploymentService(
+        tmp_path,
+        secrets=MemorySecretStore(),
+        client_factory=_SuccessfulClient,
+    )
+    service.configuration.save(
+        JenkinsConfiguration("https://jenkins.example.com/", "bot"),
+        "bound-token",
+    )
+
+    service.validate_and_save_configuration(
+        "https://jenkins.example.com",
+        "bot",
+        "",
+        keep_saved_token=True,
+    )
+    assert calls[-1] == ("https://jenkins.example.com/", "bot", "bound-token")
+
+    with pytest.raises(JenkinsError, match="重新输入 API Token"):
+        service.validate_and_save_configuration(
+            "https://other.example.com",
+            "bot",
+            "",
+            keep_saved_token=True,
+        )
+    assert len(calls) == 1

@@ -12,11 +12,16 @@ entry_path = native_root / "main.py"
 icon_path = native_root / "assets" / "ForTester.ico"
 version_path = native_root / "version_info.txt"
 default_templates_path = native_root / "assets" / "default_templates"
+dws_runtime_path = native_root / ".tools" / "dws" / "v1.0.60" / "runtime"
 
 datas = [
     (str(icon_path), "windows_native/assets"),
     # 默认模板作为程序只读母版进入 _internal，运行时只复制到用户目录。
     (str(default_templates_path), "windows_native/assets/default_templates"),
+    # EIM 只携带固定校验版本及其许可证，不打包任何用户 DWS 配置。
+    (str(dws_runtime_path / "dws.exe"), "windows_native/runtimes/dws/v1.0.60"),
+    (str(dws_runtime_path / "LICENSE"), "windows_native/runtimes/dws/v1.0.60"),
+    (str(dws_runtime_path / "NOTICE"), "windows_native/runtimes/dws/v1.0.60"),
 ]
 binaries = []
 hiddenimports = []

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from backend.ai.provider_specs import PROVIDER_SPECS
 from backend.settings.defaults import default_settings
 from backend.settings.models import (
@@ -217,3 +219,24 @@ def test_stage_policy_only_accepts_complete_capability_matching_configs(tmp_path
         assert "视觉模型" in str(exc)
     else:
         raise AssertionError("纯文本模型不应进入图片理解策略")
+
+
+def test_saved_ai_key_cannot_be_rebound_to_a_new_endpoint(tmp_path: Path) -> None:
+    service, secrets = _service(tmp_path)
+    original = _cloud_configuration("bound-key", "主模型")
+    service.save_ai_configuration(original, api_key="original-secret")
+
+    with pytest.raises(SettingsValidationError, match="重新输入 API Key"):
+        service.save_ai_configuration(
+            original.model_copy(update={"base_url": "https://gateway.example.test/v1"})
+        )
+
+    stored = next(item for item in service.load().ai.configurations if item.id == original.id)
+    assert stored.base_url == original.base_url
+    assert secrets.get(ai_configuration_secret_name(original.id)) == "original-secret"
+
+    renamed = original.model_copy(update={"name": "主模型（重命名）"})
+    service.save_ai_configuration(renamed)
+    assert next(
+        item for item in service.load().ai.configurations if item.id == original.id
+    ).name == renamed.name

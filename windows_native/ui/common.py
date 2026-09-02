@@ -511,10 +511,10 @@ class BasePage(QWidget):
         return worker
 
     def show_error(self, message: str) -> None:
-        QMessageBox.critical(self, tr("操作失败"), message)
+        QMessageBox.critical(self, tr("操作失败"), tr(message))
 
     def show_info(self, message: str) -> None:
-        QMessageBox.information(self, tr("提示"), message)
+        QMessageBox.information(self, tr("提示"), tr(message))
 
     def add_stretch(self) -> None:
         self.content.addStretch(1)

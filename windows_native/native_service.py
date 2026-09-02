@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -103,6 +104,48 @@ class NativeService:
             document_factory=DingTalkMCPService,
             spreadsheet_factory=DingTalkSpreadSheetMCPService,
             default_template_paths=self.default_template_paths,
+        )
+        self._eim = None
+        self._eim_lock = threading.Lock()
+
+    @property
+    def eim(self):
+        """首次访问时创建独立 EIM 生命周期，普通功能不承担额外启动成本。"""
+
+        if self._eim is not None:
+            return self._eim
+        with self._eim_lock:
+            if self._eim is None:
+                from backend.eim.service import EIMApplicationService
+
+                self._eim = EIMApplicationService(
+                    self.data_root,
+                    settings_service=self.settings,
+                    codex_path_resolver=self.codex_runtimes.path_for_selection,
+                )
+        return self._eim
+
+    def start_eim(self, *, restore: bool = True) -> list[str]:
+        """主界面稳定后启动 EIM 调度并恢复运行意图。"""
+
+        return self.eim.start_background(restore=restore)
+
+    def stop_eim(self) -> None:
+        """只清理已经初始化的 EIM，退出时不反向触发惰性加载。"""
+
+        if self._eim is not None:
+            self._eim.shutdown()
+
+    def eim_status(self) -> dict[str, Any]:
+        return self.eim.supervisor.status()
+
+    def get_eim_preferences(self) -> dict[str, Any]:
+        return self.desktop_preferences.get_eim_preferences()
+
+    def save_eim_preferences(self, values: dict[str, Any]) -> dict[str, Any]:
+        return self.desktop_preferences.set_eim_preferences(
+            restore_running_tasks=bool(values.get("restore_running_tasks", True)),
+            log_retention_days=int(values.get("log_retention_days", 30)),
         )
 
     def get_document(self) -> dict[str, Any]:

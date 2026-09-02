@@ -23,6 +23,7 @@ from backend.settings.models import ProviderName, SettingsSnapshot
 from services.dingtalk_mcp import DingTalkMCPService
 from services.dingtalk_output import (
     DingTalkOutputWriter,
+    LocalOutputError,
     OutputWriteResult,
     OutputWriteError,
 )
@@ -188,6 +189,21 @@ class TestCaseGenerator:
 
             test_cases = self._normalize_and_number(test_cases)
             self._raise_if_cancelled()
+            if (
+                isinstance(document_source, RequirementDocumentSource)
+                and document_source.source_type == "file"
+            ):
+                output_path = DingTalkOutputWriter._local_output_path(
+                    self.snapshot.settings.document.local_output_dir,
+                    DingTalkOutputWriter._safe_output_title(document_name),
+                )
+                if output_path == Path(document_source.location).resolve():
+                    # 输入 XLSX 与默认结果同名时必须失败关闭，绝不覆盖用户原件。
+                    raise LocalOutputError(
+                        None,
+                        None,
+                        "本地输出路径不能覆盖需求文档",
+                    )
             output = self.output_writer.write(
                 document_name,
                 test_cases,

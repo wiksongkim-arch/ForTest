@@ -34,6 +34,7 @@ from windows_native.ui.common import (
 )
 from windows_native.ui.main_window import MainWindow
 from windows_native.ui.onboarding import ConfigurationGuideDialog
+from windows_native.product import eim_feature_enabled
 from windows_native.ui.settings_page import (
     AIConfigurationDialog,
     AIConfigurationsPanel,
@@ -695,6 +696,7 @@ def workflow(app: QApplication):
         theme,
         deployment,
         onboarding_enabled=False,
+        eim_enabled=True,
     )
     window.resize(960, 700)
     window.show()
@@ -762,19 +764,48 @@ def test_preloaded_window_consumes_snapshot_without_restarting_local_services(
     window.close()
 
 
+def test_eim_feature_flag_defaults_off_and_blocks_entry(app: QApplication) -> None:
+    assert not eim_feature_enabled({})
+    assert eim_feature_enabled({"FORTEST_ENABLE_EIM": " true "})
+    window = MainWindow(
+        FakeService(),
+        QIcon(),
+        FakeTaskManager(),
+        FakeThemeManager(),
+        FakeDeploymentService(),
+        onboarding_enabled=False,
+        background_refresh_enabled=False,
+    )
+    try:
+        assert window.nav_group.button(2).isHidden()
+        window.switch_page(2, refresh=False)
+        assert window.stack.currentWidget() is window.home_page
+        # 关闭开关时不得初始化连接、保留任务或长期监听线程。
+        window._start_eim_background()
+    finally:
+        window.close()
+        app.processEvents()
+
+
 def test_sidebar_and_internal_routes(workflow, app: QApplication):
     window, _service, manager, _theme = workflow
-    assert [window.nav_group.button(index).text() for index in range(3)] == [
+    assert [window.nav_group.button(index).text() for index in range(4)] == [
         "快捷部署",
         "测试用例生成",
+        "EIM 监听",
         "设置",
     ]
-    assert len(window.nav_group.buttons()) == 3
+    assert not window.nav_group.button(2).isHidden()
+    assert len(window.nav_group.buttons()) == 4
     assert window.stack.currentWidget() is window.quick_deploy_page
     assert window.config_page not in window.nav_pages
     assert window.recycle_page not in window.nav_pages
     assert window.deployment_recycle_page not in window.nav_pages
     assert window.deployment_config_page not in window.nav_pages
+    assert window.eim_connection_page not in window.nav_pages
+    assert window.eim_studio_page not in window.nav_pages
+    assert window.eim_logs_page not in window.nav_pages
+    assert window.eim_recycle_page not in window.nav_pages
     assert manager.started == 1
 
     window.home_page.config_button.click()
@@ -1501,12 +1532,13 @@ def test_window_branding_is_compact_and_language_switches_immediately(workflow):
     window, _service, _manager, _theme = workflow
     assert window.windowTitle() == "ForTest"
     assert not window.findChildren(QLabel, "brandIcon")
-    assert any(label.text() == "ForTest v0.2.15" for label in window.findChildren(QLabel))
+    assert any(label.text() == "ForTest v0.2.16" for label in window.findChildren(QLabel))
 
     window.change_language("en_US")
-    assert [window.nav_group.button(index).text() for index in range(3)] == [
+    assert [window.nav_group.button(index).text() for index in range(4)] == [
         "Quick Deploy",
         "Test Case Generation",
+        "EIM Monitoring",
         "Settings",
     ]
     assert window.guide_button.text().endswith("Complete Setup")
@@ -1741,7 +1773,7 @@ def test_settings_page_lists_orders_and_recycles_ai_configurations(
     )
     service.ai_configurations[0]["status_detail"] = "CLI 登录态与模型目录均可用"
 
-    window.switch_page(2)
+    window.switch_page(3)
     _drain_workers(app)
     panel = window.settings_page.ai_panel
 
@@ -1900,7 +1932,7 @@ def test_other_settings_loads_and_saves_native_application_preferences(
     app: QApplication,
 ):
     window, service, _manager, _theme = workflow
-    window.switch_page(2)
+    window.switch_page(3)
     window.settings_page.tabs.setCurrentIndex(2)
     _drain_workers(app)
     panel = window.settings_page.other_panel
@@ -1924,7 +1956,7 @@ def test_other_settings_only_loads_and_saves_native_update_preferences(
     app: QApplication,
 ):
     window, service, _manager, _theme = workflow
-    window.switch_page(2)
+    window.switch_page(3)
     window.settings_page.tabs.setCurrentIndex(2)
     _drain_workers(app)
     panel = window.settings_page.other_panel
@@ -1954,6 +1986,42 @@ def test_other_settings_only_loads_and_saves_native_update_preferences(
     _drain_workers(app)
     assert panel.update_status.text() == "当前已是最新版本（v0.2.15）"
     assert panel.update_install_button.isEnabled() is False
+
+
+def test_successful_update_uses_main_window_shutdown_path(
+    workflow,
+    app: QApplication,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    window, service, _manager, _theme = workflow
+    window.switch_page(3)
+    window.settings_page.tabs.setCurrentIndex(2)
+    _drain_workers(app)
+    panel = window.settings_page.other_panel
+    update = {
+        "available": True,
+        "current_version": "0.2.15",
+        "version": "0.2.16",
+        "asset": {"name": "ForTest-Windows-x64-Setup-0.2.16.exe"},
+    }
+    panel.apply_update_result(update)
+    shutdown_calls: list[bool] = []
+    monkeypatch.setattr(
+        "windows_native.ui.settings_page.confirm_action",
+        lambda *_args, **_kwargs: True,
+    )
+    monkeypatch.setattr(
+        window,
+        "quit_application",
+        lambda: shutdown_calls.append(True),
+    )
+
+    panel.install_update()
+    _drain_workers(app)
+
+    assert service.installed_update == update
+    assert shutdown_calls == [True]
+    assert panel.update_status.text() == "安装程序已启动，ForTest 即将退出。"
 
 
 def test_prompt_steps_save_ordered_custom_model_policy(workflow, app: QApplication):

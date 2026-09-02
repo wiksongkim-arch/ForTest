@@ -63,6 +63,8 @@ class UserCard(QFrame):
         layout.addLayout(top)
         self.expiry_label = QLabel(tr("会员到期：永久"))
         self.expiry_label.setObjectName("muted")
+        # 英文状态较长时允许换行，避免窄侧栏裁掉会员信息。
+        self.expiry_label.setWordWrap(True)
         layout.addWidget(self.expiry_label)
 
 

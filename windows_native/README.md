@@ -6,8 +6,8 @@ FastAPI、Uvicorn、Streamlit、WebView，也不监听本地端口。
 
 ## 当前版本
 
-- 版本号：`0.2.15`
-- 后续每次发布固定在前一版本基础上递增 `0.0.1`，例如 `0.2.13`、`0.2.14`、`0.2.15`
+- 版本号：`0.2.16`
+- 后续每次发布固定在前一版本基础上递增 `0.0.1`，例如 `0.2.14`、`0.2.15`、`0.2.16`
 - 外观模式：跟随系统、浅色、深色
 - 任务模式：持久化任务列表与可配置的并行执行队列
 - 本地需求：支持 Markdown、TXT、DOCX、PDF、XLSX，并与在线文档共用生成流程
@@ -22,6 +22,7 @@ FastAPI、Uvicorn、Streamlit、WebView，也不监听本地端口。
 ## 架构
 
 - `main.py`：原生进程入口、单实例和启动诊断。
+- `lifecycle.py`：脱敏生命周期日志、30 秒心跳、上次未正常结束检测与退出原因记录。
 - `ui/startup_splash.py`：品牌启动页、统一启动协调器、完整就绪快照与响应性门禁。
 - `native_service.py`：把已有业务函数封装为 Qt 可调用门面。
 - `task_manager.py`：任务持久化、排队、并行执行和回收站。
@@ -46,7 +47,7 @@ FastAPI、Uvicorn、Streamlit、WebView，也不监听本地端口。
 最终安装包位于：
 
 ```text
-windows_native\dist\installer\ForTest-Windows-x64-Setup-0.2.15.exe
+windows_native\dist\installer\ForTest-Windows-x64-Setup-0.2.16.exe
 ```
 
 构建生成的诊断、隐私审计和安装日志保存在本机 `windows_native/.build/`。

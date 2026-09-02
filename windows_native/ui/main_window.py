@@ -24,11 +24,18 @@ from PySide6.QtWidgets import (
 )
 
 from windows_native.product import PRODUCT_NAME, PRODUCT_VERSION
-from windows_native.single_instance import SingleInstance, show_duplicate_instance_message
+from windows_native.lifecycle import lifecycle_event, request_application_exit
 from windows_native.i18n import set_language, tr, translate_widget_tree
 from windows_native.ui.config_page import ConfigPage
 from windows_native.ui.deployment_widgets import DeploymentRecyclePage
 from windows_native.ui.deployment_config_page import DeploymentConfigPage
+from windows_native.ui.eim_pages import (
+    EIMConnectionPage,
+    EIMLogsPage,
+    EIMPage,
+    EIMRecyclePage,
+    EIMStudioPage,
+)
 from windows_native.ui.home_page import HomePage
 from windows_native.ui.quick_deploy_page import QuickDeployPage
 from windows_native.ui.recycle_page import RecyclePage
@@ -122,6 +129,7 @@ class MainWindow(QMainWindow):
         background_refresh_enabled: bool = True,
         startup_preloaded: bool = False,
         tray_enabled: bool = False,
+        eim_enabled: bool = False,
     ):
         super().__init__()
         self.service = service
@@ -140,10 +148,15 @@ class MainWindow(QMainWindow):
         self._background_refresh_enabled = bool(background_refresh_enabled)
         self._startup_snapshot_applied = False
         self._tray_enabled = bool(tray_enabled)
+        self._eim_enabled = bool(eim_enabled)
         self._tray_icon: QSystemTrayIcon | None = None
         self._tray_menu: QMenu | None = None
         self._tray_show_action: QAction | None = None
+        self._tray_eim_action: QAction | None = None
         self._tray_quit_action: QAction | None = None
+        self._tray_eim_counts = (0, 0)
+        self._last_notified_abnormal: int | None = None
+        self._eim_status_loading = False
         self._shutdown_complete = False
         self._quit_requested = False
         self.setWindowTitle(PRODUCT_NAME)
@@ -176,6 +189,7 @@ class MainWindow(QMainWindow):
             auto_refresh=background_refresh_enabled and not startup_preloaded,
         )
         self.home_page = HomePage(service, task_manager)
+        self.eim_page = EIMPage(service)
         # 设置中心直接承接 AI 能力快照，不再创建旧的全局模型选择页面。
         self.settings_page = SettingsPage(service, theme_manager)
         self.settings_page.configuration_changed.connect(
@@ -186,15 +200,19 @@ class MainWindow(QMainWindow):
         self.nav_pages = [
             self.quick_deploy_page,
             self.home_page,
+            self.eim_page,
             self.settings_page,
         ]
-        labels = [tr("快捷部署"), tr("测试用例生成"), tr("设置")]
+        labels = [tr("快捷部署"), tr("测试用例生成"), tr("EIM 监听"), tr("设置")]
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
         for index, (label, page) in enumerate(zip(labels, self.nav_pages, strict=True)):
             button = QPushButton(label)
             button.setObjectName("nav")
             button.setCheckable(True)
+            # 真实 G0 完成前，EIM 只在内部试运行开关开启时显示入口。
+            if index == 2 and not self._eim_enabled:
+                button.setVisible(False)
             button.clicked.connect(
                 lambda _checked=False, target=index: self.switch_page(target)
             )
@@ -207,10 +225,18 @@ class MainWindow(QMainWindow):
         self.recycle_page = RecyclePage(task_manager)
         self.deployment_recycle_page = DeploymentRecyclePage(deployment_service)
         self.deployment_config_page = DeploymentConfigPage(deployment_service)
+        self.eim_connection_page = EIMConnectionPage(service)
+        self.eim_studio_page = EIMStudioPage(service)
+        self.eim_logs_page = EIMLogsPage(service)
+        self.eim_recycle_page = EIMRecyclePage(service)
         self.stack.addWidget(self.config_page)
         self.stack.addWidget(self.recycle_page)
         self.stack.addWidget(self.deployment_recycle_page)
         self.stack.addWidget(self.deployment_config_page)
+        self.stack.addWidget(self.eim_connection_page)
+        self.stack.addWidget(self.eim_studio_page)
+        self.stack.addWidget(self.eim_logs_page)
+        self.stack.addWidget(self.eim_recycle_page)
         self.home_page.modify_config_requested.connect(self.show_config)
         self.home_page.recycle_requested.connect(self.show_recycle)
         self.config_page.back_requested.connect(self._leave_config)
@@ -232,6 +258,16 @@ class MainWindow(QMainWindow):
         self.deployment_config_page.task_settings_saved.connect(
             self.quick_deploy_page.apply_task_settings
         )
+        self.eim_page.connection_requested.connect(self.show_eim_connection)
+        self.eim_page.studio_requested.connect(self.show_eim_studio)
+        self.eim_page.logs_requested.connect(self.show_eim_logs)
+        self.eim_page.recycle_requested.connect(self.show_eim_recycle)
+        self.eim_connection_page.back_requested.connect(self.show_eim)
+        self.eim_studio_page.back_requested.connect(self.show_eim)
+        self.eim_studio_page.logs_requested.connect(self.show_eim_logs)
+        self.eim_studio_page.changed.connect(self.eim_page.refresh)
+        self.eim_logs_page.back_requested.connect(self.show_eim)
+        self.eim_recycle_page.back_requested.connect(self.show_eim)
 
         side_layout.addStretch()
         version_row = QHBoxLayout()
@@ -273,6 +309,10 @@ class MainWindow(QMainWindow):
             return
         tray_menu = QMenu(self)
         show_action = tray_menu.addAction("")
+        eim_action = tray_menu.addAction("") if self._eim_enabled else None
+        if eim_action is not None:
+            eim_action.setEnabled(False)
+        tray_menu.addSeparator()
         quit_action = tray_menu.addAction("")
         show_action.triggered.connect(self.show_and_activate)
         quit_action.triggered.connect(self.quit_application)
@@ -283,6 +323,7 @@ class MainWindow(QMainWindow):
 
         self._tray_menu = tray_menu
         self._tray_show_action = show_action
+        self._tray_eim_action = eim_action
         self._tray_quit_action = quit_action
         self._tray_icon = tray_icon
         self._retranslate_system_tray()
@@ -295,6 +336,11 @@ class MainWindow(QMainWindow):
             self._tray_icon.setToolTip(PRODUCT_NAME)
         if self._tray_show_action is not None:
             self._tray_show_action.setText(tr("显示主窗口"))
+        if self._tray_eim_action is not None:
+            running, abnormal = self._tray_eim_counts
+            self._tray_eim_action.setText(
+                tr("EIM：运行 {running}，异常 {abnormal}", running=running, abnormal=abnormal)
+            )
         if self._tray_quit_action is not None:
             self._tray_quit_action.setText(tr("退出程序"))
 
@@ -374,6 +420,12 @@ class MainWindow(QMainWindow):
         if self._shutdown_complete:
             return
         self._shutdown_complete = True
+        # EIM 持有长连接，显式退出时必须最先进入干净停止流程。
+        stop_service = getattr(self.service, "stop_loaded_services", None)
+        if not callable(stop_service):
+            stop_service = getattr(self.service, "stop_eim", None)
+        if callable(stop_service):
+            stop_service()
         self.quick_deploy_page.shutdown()
         deployment_stop = getattr(self.deployment_service, "stop", None)
         if callable(deployment_stop):
@@ -383,6 +435,7 @@ class MainWindow(QMainWindow):
     def _finish_quit(self, event: QCloseEvent) -> None:
         """完成窗口退出，并显式结束禁用了末窗退出策略的应用。"""
 
+        request_application_exit("window_close_accepted")
         self._quit_requested = True
         self._shutdown_once()
         if self._tray_icon is not None:
@@ -395,6 +448,7 @@ class MainWindow(QMainWindow):
     def quit_application(self) -> None:
         """供托盘菜单调用的幂等退出入口。"""
 
+        request_application_exit("tray_menu_quit")
         self._quit_requested = True
         if not self.close():
             # 理论上强制退出分支不会被拒绝；此处仍保证异常窗口状态可以收尾。
@@ -453,6 +507,67 @@ class MainWindow(QMainWindow):
         if self._background_refresh_enabled:
             # 自动更新只检查元数据；下载和安装仍必须由用户点击“立即更新”。
             QTimer.singleShot(2200, self._start_auto_update_check)
+            # 诊断模式禁用后台刷新，也必须避免启动外部长连接和 Qt 线程池任务。
+            QTimer.singleShot(700, self._start_eim_background)
+
+    def _start_eim_background(self) -> None:
+        """启动 EIM 引擎、执行保留清理并按用户偏好恢复运行意图。"""
+
+        if not self._eim_enabled:
+            return
+
+        def work() -> list[str]:
+            preferences = self.service.get_eim_preferences()
+            self.service.eim.run_retention(
+                log_days=int(preferences.get("log_retention_days", 30))
+            )
+            return self.service.start_eim(
+                restore=bool(preferences.get("restore_running_tasks", True))
+            )
+
+        def success(_restored: list[str]) -> None:
+            self.eim_page.refresh()
+            self._refresh_eim_tray_status()
+            if self._tray_icon is not None:
+                self._eim_timer = QTimer(self)
+                self._eim_timer.setInterval(5000)
+                self._eim_timer.timeout.connect(self._refresh_eim_tray_status)
+                self._eim_timer.start()
+
+        self.eim_page.run_async(work, success=success, failure=lambda _message: self.eim_page.refresh())
+
+    def _refresh_eim_tray_status(self) -> None:
+        """异步刷新托盘计数，同一次轮询尚未完成时不重复排队。"""
+
+        if not self._eim_enabled or self._eim_status_loading:
+            return
+        self._eim_status_loading = True
+
+        def success(value: dict[str, Any]) -> None:
+            running = int(value.get("running") or 0)
+            abnormal = int(value.get("degraded") or 0)
+            self._tray_eim_counts = (running, abnormal)
+            self._retranslate_system_tray()
+            previous = self._last_notified_abnormal
+            if (
+                previous is not None
+                and abnormal > previous
+                and self._tray_icon is not None
+            ):
+                self._tray_icon.showMessage(
+                    PRODUCT_NAME,
+                    tr("EIM 新增异常任务，请打开主窗口查看。"),
+                    QSystemTrayIcon.MessageIcon.Warning,
+                    5000,
+                )
+            self._last_notified_abnormal = abnormal
+
+        self.eim_page.run_async(
+            self.service.eim_status,
+            success=success,
+            failure=lambda _message: None,
+            finished=lambda: setattr(self, "_eim_status_loading", False),
+        )
 
     def _start_auto_update_check(self) -> None:
         checker = getattr(self.service, "check_for_update_automatically", None)
@@ -491,6 +606,8 @@ class MainWindow(QMainWindow):
         self.setGeometry(geometry.x, geometry.y, geometry.width, geometry.height)
 
     def switch_page(self, index: int, *, refresh: bool = True) -> None:
+        if index == 2 and not self._eim_enabled:
+            index = 1
         page = self.nav_pages[index]
         self.stack.setCurrentWidget(page)
         button = self.nav_group.button(index)
@@ -505,6 +622,37 @@ class MainWindow(QMainWindow):
 
     def show_quick_deploy(self) -> None:
         self.switch_page(0)
+
+    def show_eim(self) -> None:
+        self.switch_page(2)
+
+    def show_eim_connection(self) -> None:
+        if not self._eim_enabled:
+            self.show_home()
+            return
+        self.stack.setCurrentWidget(self.eim_connection_page)
+        self.eim_connection_page.refresh()
+
+    def show_eim_studio(self, task_id: str) -> None:
+        if not self._eim_enabled:
+            self.show_home()
+            return
+        self.stack.setCurrentWidget(self.eim_studio_page)
+        self.eim_studio_page.open_task(task_id)
+
+    def show_eim_logs(self, task_id: str = "") -> None:
+        if not self._eim_enabled:
+            self.show_home()
+            return
+        self.stack.setCurrentWidget(self.eim_logs_page)
+        self.eim_logs_page.set_task_filter(task_id)
+
+    def show_eim_recycle(self) -> None:
+        if not self._eim_enabled:
+            self.show_home()
+            return
+        self.stack.setCurrentWidget(self.eim_recycle_page)
+        self.eim_recycle_page.refresh()
 
     def show_config(self) -> None:
         self.stack.setCurrentWidget(self.config_page)
@@ -605,7 +753,7 @@ class MainWindow(QMainWindow):
             self.deployment_config_page.tabs.setCurrentIndex(0)
             return
         if target == "ai":
-            self.switch_page(2)
+            self.switch_page(3)
             self.settings_page.tabs.setCurrentIndex(0)
             return
         self.show_config()
@@ -628,6 +776,16 @@ class MainWindow(QMainWindow):
         self.recycle_page.table._last_tasks = None
         self.home_page.refresh_tasks()
         self.recycle_page.refresh()
+        if self._eim_enabled:
+            self.eim_page.refresh()
+            if self.stack.currentWidget() is self.eim_studio_page:
+                self.eim_studio_page.refresh()
+            elif self.stack.currentWidget() is self.eim_logs_page:
+                self.eim_logs_page.refresh()
+            elif self.stack.currentWidget() is self.eim_connection_page:
+                self.eim_connection_page.refresh()
+            elif self.stack.currentWidget() is self.eim_recycle_page:
+                self.eim_recycle_page.refresh()
         self.appearance_page._update_summary()
         self.deployment_config_page.retranslate()
         self._retranslate_system_tray()
@@ -635,23 +793,50 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt API
         """按用户偏好隐藏到托盘、退出或取消，并防止无托盘时成为幽灵进程。"""
 
+        try:
+            spontaneous = bool(event.spontaneous())
+        except (AttributeError, RuntimeError):
+            spontaneous = False
         if self._quit_requested:
+            lifecycle_event(
+                "window_close_received",
+                source="window_system" if spontaneous else "application",
+                forced=True,
+                visible=bool(self.isVisible()),
+            )
             self._finish_quit(event)
             return
 
         behavior = self._preferred_close_behavior()
         tray_usable = self._tray_is_usable()
+        lifecycle_event(
+            "window_close_received",
+            source="window_system" if spontaneous else "application",
+            forced=False,
+            preferred_behavior=behavior,
+            tray_usable=tray_usable,
+            visible=bool(self.isVisible()),
+            minimized=bool(self.isMinimized()),
+        )
         if not tray_usable:
             # 没有可靠的恢复入口时必须正常退出，不能把进程隐藏到后台。
             behavior = "quit"
+            lifecycle_event("window_close_no_usable_tray")
         elif behavior == "ask":
             behavior = self._ask_close_behavior()
+            lifecycle_event("window_close_prompt_result", behavior=behavior)
 
         if behavior == "cancel":
+            lifecycle_event("window_close_cancelled")
             event.ignore()
             return
         if behavior == "minimize":
+            lifecycle_event("window_hidden_to_tray")
             event.ignore()
             self.hide()
             return
+        request_application_exit(
+            "window_system_close" if spontaneous else "programmatic_window_close",
+            tray_usable=tray_usable,
+        )
         self._finish_quit(event)

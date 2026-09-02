@@ -96,6 +96,22 @@ def test_native_build_runs_source_and_artifact_privacy_gates():
     assert "include_py_files=False" in spec
 
 
+def test_native_package_pins_dws_without_user_configuration():
+    build = (PROJECT_ROOT / "windows_native" / "build.ps1").read_text(
+        encoding="utf-8"
+    )
+    spec = (PROJECT_ROOT / "windows_native" / "ForTest.spec").read_text(
+        encoding="utf-8"
+    )
+
+    assert "dwsVersion = '1.0.60'" in build
+    assert "dwsArchiveSha256" in build and "dwsExecutableSha256" in build
+    assert 'dws_runtime_path / "dws.exe"' in spec
+    assert 'dws_runtime_path / "LICENSE"' in spec
+    assert 'dws_runtime_path / "NOTICE"' in spec
+    assert "DWS_CONFIG_DIR" not in spec
+
+
 def test_installer_cleans_stale_frozen_runtime_and_build_smokes_local_backup():
     installer = (PROJECT_ROOT / "windows_native" / "installer.iss").read_text(
         encoding="utf-8"

@@ -18,6 +18,9 @@ class SecretStore(Protocol):
     def delete(self, name: str) -> None:
         raise NotImplementedError
 
+    def list_names(self, prefix: str = "") -> list[str]:
+        raise NotImplementedError
+
 
 class KeyringSecretStore:
     def get(self, name: str) -> str | None:
@@ -34,6 +37,26 @@ class KeyringSecretStore:
         except keyring.errors.PasswordDeleteError:
             return
 
+    def list_names(self, prefix: str = "") -> list[str]:
+        """仅枚举本产品在 Windows 凭据库中的用户名，不读取其它凭据值。"""
+
+        try:
+            from keyring.backends.Windows import win32cred
+
+            credentials = win32cred.CredEnumerate(None, 0)
+        except Exception:
+            return []
+        names = {
+            str(item.get("UserName") or "")
+            for item in credentials
+            if isinstance(item, dict)
+            and (
+                str(item.get("TargetName") or "") == SERVICE_NAME
+                or str(item.get("TargetName") or "").endswith(f"@{SERVICE_NAME}")
+            )
+        }
+        return sorted(name for name in names if name and name.startswith(prefix))
+
 
 class MemorySecretStore:
     def __init__(self):
@@ -47,6 +70,9 @@ class MemorySecretStore:
 
     def delete(self, name: str) -> None:
         self.values.pop(name, None)
+
+    def list_names(self, prefix: str = "") -> list[str]:
+        return sorted(name for name in self.values if name.startswith(prefix))
 
 
 def mask_secret(value: str | None) -> str | None:

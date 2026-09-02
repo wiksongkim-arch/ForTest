@@ -6,6 +6,8 @@
 - 普通用户配置统一写入 `%LOCALAPPDATA%\ForTest\UserData\data`。
 - AI API Key、MCP 地址和 Jenkins Token 只写入 Windows 凭据管理器，JSON 中仅保存非密钥字段。
 - 生成结果、任务记录、日志、下载的 Codex 版本均位于用户数据目录，不使用源码目录或安装目录。
+- EIM OAuth/DWS profile、事件 inbox/outbox、去重状态和临时媒体只位于 `%LOCALAPPDATA%\ForTest\UserData`；安装包和源码快照不得包含任何连接 profile 或事件内容。
+- EIM 配置导出不包含凭据；日志和样例执行结构化脱敏，媒体按任务策略清理，存在未完成投递时最长保留 30 天。
 
 ## 已消除的问题
 

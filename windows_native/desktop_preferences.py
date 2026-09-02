@@ -28,6 +28,7 @@ UPDATE_CHANNELS = frozenset({"stable", "beta"})
 DEFAULT_UPDATE_URL = "https://github.com/wiksongkim-arch/ForTest"
 CLOSE_BEHAVIORS = frozenset({"ask", "minimize", "quit"})
 DEFAULT_CLOSE_BEHAVIOR = "ask"
+DEFAULT_EIM_LOG_RETENTION_DAYS = 30
 
 
 def normalize_update_url(value: object) -> str:
@@ -160,6 +161,39 @@ class DesktopPreferences:
             raise ValueError(f"不支持的关闭行为：{behavior}")
         self._update_section("application", "close_behavior", normalized)
         return normalized
+
+    def get_eim_preferences(self) -> dict[str, Any]:
+        """读取 EIM 恢复和日志保留设置，损坏值回退为安全默认值。"""
+
+        stored = self._read().get("eim", {})
+        if not isinstance(stored, dict):
+            stored = {}
+        try:
+            log_days = int(stored.get("log_retention_days", DEFAULT_EIM_LOG_RETENTION_DAYS))
+        except (TypeError, ValueError):
+            log_days = DEFAULT_EIM_LOG_RETENTION_DAYS
+        return {
+            "restore_running_tasks": bool(stored.get("restore_running_tasks", True)),
+            "log_retention_days": min(365, max(1, log_days)),
+        }
+
+    def set_eim_preferences(
+        self,
+        *,
+        restore_running_tasks: bool,
+        log_retention_days: int,
+    ) -> dict[str, Any]:
+        """原子保存 EIM 生命周期偏好，保留天数限制在 1 至 365 天。"""
+
+        days = int(log_retention_days)
+        if not 1 <= days <= 365:
+            raise ValueError("EIM 日志保留天数必须在 1 到 365 之间")
+        values = {
+            "restore_running_tasks": bool(restore_running_tasks),
+            "log_retention_days": days,
+        }
+        self._update_section_values("eim", values)
+        return values
 
     def get_user_profile(self) -> dict[str, str]:
         """读取本地用户卡片；字段为未来登录与会员后端预留。"""

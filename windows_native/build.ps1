@@ -26,6 +26,10 @@ if (-not $versionMatch.Success) {
 $versionMajor = [int]$versionMatch.Groups['major'].Value
 $versionMinor = [int]$versionMatch.Groups['minor'].Value
 $versionPatch = [int]$versionMatch.Groups['patch'].Value
+$dwsVersion = '1.0.60'
+$dwsArchiveSha256 = 'cce1cb02fece17443957441207849f3dd465bb3261377dedc349d27046cedcb6'
+$dwsExecutableSha256 = '6eccc842f09e661fa3a1aefd2231b8ae849e9542903bf87da6499e24ab1ae3d3'
+$dwsDownloadUrl = "https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/releases/download/v$dwsVersion/dws-windows-amd64.zip"
 
 
 function Write-Step {
@@ -153,10 +157,70 @@ function Assert-X64PortableExecutable {
 }
 
 
+function Initialize-DwsRuntime {
+    $dwsRoot = Assert-NativeChildPath -Path (Join-Path $nativeRoot ".tools\dws\v$dwsVersion")
+    $archive = Assert-NativeChildPath -Path (Join-Path $dwsRoot 'dws-windows-amd64.zip')
+    $runtime = Assert-NativeChildPath -Path (Join-Path $dwsRoot 'runtime')
+    $executable = Join-Path $runtime 'dws.exe'
+    $runtimeReady = (
+        (Test-Path -LiteralPath $executable) -and
+        (Test-Path -LiteralPath (Join-Path $runtime 'LICENSE')) -and
+        (Test-Path -LiteralPath (Join-Path $runtime 'NOTICE')) -and
+        (Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant() -eq $dwsExecutableSha256
+    )
+    if (-not $runtimeReady) {
+        New-Item -ItemType Directory -Path $dwsRoot -Force | Out-Null
+        $archiveReady = (
+            (Test-Path -LiteralPath $archive) -and
+            (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -eq $dwsArchiveSha256
+        )
+        if (-not $archiveReady) {
+            $download = Assert-NativeChildPath -Path "$archive.download"
+            Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue
+            Write-Step "Downloading pinned DWS v$dwsVersion runtime"
+            Invoke-WebRequest -Uri $dwsDownloadUrl -OutFile $download
+            if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -ne $dwsArchiveSha256) {
+                Remove-Item -LiteralPath $download -Force
+                throw 'Downloaded DWS archive SHA-256 verification failed.'
+            }
+            Move-Item -LiteralPath $download -Destination $archive -Force
+        }
+        $staging = Assert-NativeChildPath -Path (Join-Path $dwsRoot '.extracting')
+        Remove-SafeTree -Path $staging
+        New-Item -ItemType Directory -Path $staging -Force | Out-Null
+        try {
+            Expand-Archive -LiteralPath $archive -DestinationPath $staging -Force
+            foreach ($name in @('dws.exe', 'LICENSE', 'NOTICE')) {
+                if (-not (Test-Path -LiteralPath (Join-Path $staging $name) -PathType Leaf)) {
+                    throw "Pinned DWS archive is missing $name."
+                }
+            }
+            Remove-SafeTree -Path $runtime
+            New-Item -ItemType Directory -Path $runtime -Force | Out-Null
+            foreach ($name in @('dws.exe', 'LICENSE', 'NOTICE')) {
+                Copy-Item -LiteralPath (Join-Path $staging $name) -Destination (Join-Path $runtime $name)
+            }
+        }
+        finally {
+            Remove-SafeTree -Path $staging
+        }
+    }
+    if ((Get-FileHash -LiteralPath $executable -Algorithm SHA256).Hash.ToLowerInvariant() -ne $dwsExecutableSha256) {
+        throw 'DWS executable SHA-256 verification failed.'
+    }
+    Assert-X64PortableExecutable -Path $executable
+    $reportedVersion = (& $executable --version 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $reportedVersion -notmatch "dws version v$([regex]::Escape($dwsVersion))") {
+        throw "DWS runtime version probe failed: $reportedVersion"
+    }
+}
+
+
 if (-not [Environment]::Is64BitOperatingSystem -or -not [Environment]::Is64BitProcess) {
     throw 'Build requires 64-bit Windows and 64-bit PowerShell.'
 }
 
+Initialize-DwsRuntime
 Write-VersionResource -TargetPath (Join-Path $nativeRoot 'version_info.txt')
 
 if ($Clean) {
@@ -297,6 +361,21 @@ if (-not (Test-Path -LiteralPath $packagedExe)) {
     throw "Packaged application was not created: $packagedExe"
 }
 Assert-X64PortableExecutable -Path $packagedExe
+$packagedDwsRoot = Join-Path $distRoot "ForTest\_internal\windows_native\runtimes\dws\v$dwsVersion"
+$packagedDws = Join-Path $packagedDwsRoot 'dws.exe'
+if (
+    -not (Test-Path -LiteralPath $packagedDws) -or
+    -not (Test-Path -LiteralPath (Join-Path $packagedDwsRoot 'LICENSE')) -or
+    -not (Test-Path -LiteralPath (Join-Path $packagedDwsRoot 'NOTICE')) -or
+    (Get-FileHash -LiteralPath $packagedDws -Algorithm SHA256).Hash.ToLowerInvariant() -ne $dwsExecutableSha256
+) {
+    throw 'Packaged DWS runtime or license files failed verification.'
+}
+Assert-X64PortableExecutable -Path $packagedDws
+$packagedDwsVersion = (& $packagedDws --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $packagedDwsVersion -notmatch "dws version v$([regex]::Escape($dwsVersion))") {
+    throw 'Packaged DWS runtime version probe failed.'
+}
 
 Write-Step 'Auditing packaged modules and files for private data'
 $artifactPrivacyReport = Join-Path $buildRoot 'package-privacy-artifact.json'

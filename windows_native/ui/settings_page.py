@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from windows_native.i18n import tr
+from windows_native.lifecycle import request_application_exit
 from windows_native.ui.appearance_page import AppearancePage
 from windows_native.ui.common import (
     BasePage,
@@ -1307,6 +1308,16 @@ class OtherSettingsPanel(QWidget):
 
         def success(_path: str) -> None:
             self.update_status.setText(tr("安装程序已启动，ForTest 即将退出。"))
+            request_application_exit(
+                "update_installer_launched",
+                version=version,
+            )
+            top_level = self.window()
+            quit_application = getattr(top_level, "quit_application", None)
+            if callable(quit_application):
+                # 统一走主窗口清理链，确保任务调度器、EIM 和托盘都正确停止。
+                quit_application()
+                return
             application = QApplication.instance()
             if application is not None:
                 application.quit()

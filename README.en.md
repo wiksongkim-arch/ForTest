@@ -2,7 +2,7 @@ English | [简体中文](./README.md)
 
 # ForTest
 
-A native Windows desktop tool developed with the assistance of Codex for software test engineers, focused on streamlined Jenkins deployment and high-quality test case generation.
+A native Windows desktop tool developed with the assistance of Codex for software test engineers, focused on Jenkins deployment, high-quality test case generation, and DingTalk event archiving.
 
 [Download the latest release](https://github.com/wiksongkim-arch/ForTest/releases/latest) · [Report an issue](https://github.com/wiksongkim-arch/ForTest/issues) · [Contribute](CONTRIBUTING.md) · [Report a security issue](SECURITY.md)
 
@@ -10,14 +10,16 @@ A native Windows desktop tool developed with the assistance of Codex for softwar
 
 ForTest is a Windows desktop tool developed with the assistance of Codex for software test engineers. It turns repetitive and fragmented testing work into clear, reusable, and traceable workflows, reducing the need to switch repeatedly among requirement documents, models, test case templates, and deployment platforms.
 
-The current release is a fully native Windows x64 desktop application. It does not depend on a browser interface and does not start Streamlit, FastAPI, or a local web service. It currently contains two core modules: **Jenkins Quick Deploy** and **Test Case Generation**.
+The current release is a fully native Windows x64 desktop application. It does not depend on a browser interface and does not start Streamlit, FastAPI, or a local web service. It contains **Jenkins Quick Deploy**, **Test Case Generation**, and a default-off **EIM Monitoring internal-preview module**.
 
-## v0.2.15 Highlights
+## v0.2.16 Highlights
 
+- The default-off EIM Monitoring internal preview uses an isolated DWS v1.0.60 runtime to archive DingTalk text, media, quoted-message, and Reaction events idempotently to Docs, Sheets, or AI Tables. It includes a task workbench, immutable versions, disconnect reconciliation, logs, a recycle bin, and optional AI enrichment.
 - Quick Deploy now offers Save Only and Create & Deploy. Redeploying appends a new execution run to the original task, preserving its task ID and distinguishable run history.
 - Test Case Generation accepts multiple requirement links, one per line, in a wider scrollable editor. The full batch is validated before tasks are created and started in input order.
 - Appearance is now the second tab under Settings, immediately after AI Settings, which keeps the sidebar focused.
 - Other Settings now provides automatic GitHub Release checks, Check for Updates, and Update Now. Before an installer starts, ForTest validates the source host, file size, SHA-256, and Windows x64 PE architecture.
+- Desktop lifecycle diagnostics now record exit reasons from the tray, windows, Windows sessions, and update installation. A 30-second heartbeat and previous-unclean-run marker help investigate unattended exits, with exception details redacted before logging.
 
 ## Core Capabilities
 
@@ -35,9 +37,17 @@ This staged and constraint-driven approach is intended to reduce context omissio
 
 The current release primarily uses **document MCP integration** for online documents and provides focused support for **Codex CLI** discovery, configuration, model selection, and runtime version management. Additional document platforms and model integrations will be added gradually. Refer to each Release and the in-app connection checks for the currently supported scope.
 
+### EIM Monitoring
+
+> EIM still requires real G0 acceptance in an independent test organization. Public builds hide the entry and do not start its background runtime by default. Controlled testers can set `FORTEST_ENABLE_EIM=1` before launch; remove it or set it to `0`, then restart, to disable EIM again.
+
+EIM Monitoring receives DingTalk group events through a pinned, verified DWS v1.0.60 runtime with an isolated configuration directory. Events pass through normalization, deduplication, restricted EIM DSL rules, and bounded retries before being written to DingTalk Docs, Sheets, or AI Tables. When commit status is uncertain, ForTest reads back the idempotency marker first; disconnect gaps that cannot be reconciled reliably are surfaced as Degraded.
+
+Tasks support structured rules and mappings, sanitized sample tests, immutable versions, log export, credential-free configuration import/export, a recycle bin, tray operation, and startup restoration. Deterministic tasks never call AI. Optional AI build and runtime steps are restricted to registered actions, explicit input fields, daily budgets, and failure policies. See the [EIM Monitoring Guide](docs/eim-monitoring.en.md) for connection, permission, self-loop, cost, privacy, and troubleshooting details.
+
 ## Codex Skill Validation and Roadmap
 
-In addition to the two modules already delivered in the desktop application, the project has validated several testing workflows in Codex Skill form. The capabilities below may be productized gradually according to stability and real-world feedback; **they are not currently bundled as stable features in the latest desktop Release**:
+In addition to the three modules delivered in the desktop application, the project has validated several testing workflows in Codex Skill form. The capabilities below may be productized gradually according to stability and real-world feedback; **they are not currently bundled as stable features in the latest desktop Release**:
 
 1. **Reverse requirement completion**: infer and complete missing requirement descriptions and acceptance criteria using existing implementations, test materials, and business context.
 2. **Requirement analysis and gap detection**: inspect coverage, boundary conditions, error scenarios, roles and permissions, ambiguities, and contradictions across a requirement.
@@ -54,8 +64,9 @@ This roadmap describes the current direction of exploration and is not a commitm
 - Configuration, task history, logs, and generated files are stored under `%LOCALAPPDATA%\ForTest\UserData` instead of the installation directory.
 - Secrets are stored separately from ordinary settings, and credentials are redacted from logs and error messages.
 - Built-in task queues, recycle bins, actionable error messages, and recoverable data migration.
+- Lifecycle logs capture window/tray exit paths, Windows session shutdown, event-loop return, and redacted exceptions, with a heartbeat that detects a previously interrupted run.
 - Configurable GitHub Release update checks; downloading and installation always require an explicit user action.
-- The installer includes application dependencies and the Codex CLI runtime, so end users do not need to configure Python.
+- The installer includes application dependencies, the Codex CLI runtime, and pinned DWS v1.0.60, so end users do not need to configure Python or a global DWS runtime.
 
 ## Quick Start
 
@@ -65,15 +76,17 @@ This roadmap describes the current direction of exploration and is not a commitm
 - 64-bit operating system (x64)
 - A reachable Jenkins service and an account with the required permissions for Jenkins features
 - Network access and valid credentials for the relevant document and model services
+- For a controlled EIM trial, set `FORTEST_ENABLE_EIM=1` and use a DingTalk test account that can complete the official OAuth/QR flow, see the source group, and read and write the archive destination
 
 ### Installation and First Use
 
-1. Open [GitHub Releases](https://github.com/wiksongkim-arch/ForTest/releases/latest) and download `ForTest-Windows-x64-Setup-0.2.15.exe`.
+1. Open [GitHub Releases](https://github.com/wiksongkim-arch/ForTest/releases/latest) and download `ForTest-Windows-x64-Setup-0.2.16.exe`.
 2. Compare the file against the SHA-256 value on the Release page, then run the installer. ForTest installs to the current user's directory by default and does not require administrator privileges.
 3. Start ForTest and complete the required setup shown on the home screen:
    - Quick Deploy: enter the Jenkins URL, username, and API Token, then test the connection.
    - Test Case Generation: configure the document MCP, output destination, models, and prompts. When using Codex CLI, follow the in-app guidance to sign in or select a runtime.
-4. Return to the relevant workspace and create a deployment task or test case generation task.
+   - EIM Monitoring (controlled preview): set `FORTEST_ENABLE_EIM=1` before launch, open Connection and Runtime Settings, complete official DingTalk authorization, and confirm group discovery and event capabilities.
+4. Return to the relevant workspace and create a deployment, generation, or monitoring task.
 
 > The current public installer is not signed with an Authenticode certificate, so Windows may display an application reputation warning. Download it only from this repository's Releases and verify its SHA-256 first. Do not run a file whose source or digest does not match.
 
@@ -101,6 +114,12 @@ Manage model configurations, Codex CLI sources and versions, models, and reasoni
 
 ![ForTest AI and Codex CLI settings interface](png/4en.png)
 
+### EIM Monitoring
+
+The overview brings the connection boundary, runtime metrics, task states, and governance actions together. The task workbench tests rules, publishes immutable versions, and requires an explicit start.
+
+![ForTest EIM Monitoring overview](png/7en.png)
+
 ### Batch Tasks and Application Updates
 
 Link mode accepts multiple requirements-document addresses, one per line. Tasks are created and started in input order, and the editor scrolls both horizontally and vertically.
@@ -116,7 +135,7 @@ Appearance now lives in Settings immediately after AI Settings. The Other tab ca
 ## Current Limitations
 
 - Only a Windows x64 desktop edition is currently available; macOS, Linux, ARM64, and web editions are not supported.
-- **EIM monitoring is not released**: the execution plan requires a hard gate proving that messages sent by the currently signed-in user are returned completely. In the official DWS v1.0.60 [event monitoring reference](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/blob/v1.0.60/skills/mono/references/products/event.md), self-sent messages are filtered by `isSelfLoop`. Under the plan's No-Go rule, this release therefore includes no EIM UI, background engine, or polling workaround.
+- The first EIM release supports DingTalk only. Official DWS v1.0.60 filters messages sent by the currently authorized OAuth account through `isSelfLoop`; ForTest keeps this boundary visible in the UI and does not bypass it through polling or private APIs. Messages from other members and bots are monitored normally.
 - Online requirements currently use the document MCP workflow; other collaboration platforms have not yet been released as stable capabilities.
 - Codex CLI is the primary model invocation path currently under focused validation. Treat other models and compatible interfaces according to their in-app check results.
 - Jenkins, document platform, and model operations remain subject to the permissions, network access, certificates, and quotas of those external services.
@@ -127,7 +146,7 @@ Appearance now lives in Settings immediately after AI Settings. The Other tab ca
 | Path | Description |
 | --- | --- |
 | `windows_native/` | Native Qt desktop application, Jenkins module, UI components, runtime management, tests, PyInstaller configuration, and Inno Setup installer scripts. |
-| `backend/` | Shared business core for AI configuration, prompts, generation workflows, settings models, and security validation. |
+| `backend/` | Shared business core for AI configuration, prompts, generation workflows, the EIM event engine, settings models, and security validation. |
 | `services/` | Integrations for document MCP, spreadsheet output, and requirement document processing. |
 | `utils/` | Shared utilities such as Excel output and default template loading. |
 | `tests/` | Unit, integration, security, and regression tests for the shared business core. |
@@ -135,7 +154,7 @@ Appearance now lives in Settings immediately after AI Settings. The Other tab ca
 | `windows_native/assets/` | Application icons and bundled templates that are licensed for redistribution. |
 | `png/` | Redacted interface previews used by the Chinese and English READMEs. |
 | `.github/` | Issue and Pull Request templates plus Windows CI workflows. |
-| `docs/` | Long-lived security, privacy, and source publication documentation for maintainers. |
+| `docs/` | EIM user guides plus long-lived security, privacy, and source publication documentation for maintainers. |
 | `scripts/` | Maintenance utilities such as data migration scripts. |
 
 Build artifacts, virtual environments, user configuration, logs, one-off validation records, and development assistant files are ignored by Git and are not part of the published source package.

@@ -727,7 +727,7 @@ class HttpProviderTests(unittest.TestCase):
 
         owned = Mock()
         with patch(
-            "backend.ai.openai_compatible_provider.requests.Session",
+            "backend.ai.openai_compatible_provider.httpx.Client",
             return_value=owned,
         ):
             owned_provider = MiniMaxProvider(
@@ -772,7 +772,7 @@ class HttpProviderTests(unittest.TestCase):
             "Authorization: Bearer provider-secret"
         )
         with patch(
-            "backend.ai.openai_compatible_provider.requests.Session",
+            "backend.ai.openai_compatible_provider.httpx.Client",
             return_value=owned,
         ):
             provider = OpenAICompatibleProvider(

@@ -588,6 +588,10 @@ class CodexSDKBoundaryTests(unittest.TestCase):
         self.assertEqual(evidence.runtime_mode, "cli")
         self.assertEqual(provider.selected_runtime, "cli")
         cli_stage.assert_called_once()
+        self.assertIn(
+            "Do not run tools, commands, MCP calls, skills, or file reads/writes",
+            cli_stage.call_args.args[1],
+        )
         sdk.close.assert_awaited_once()
 
     def test_unclassified_account_and_invalid_params_do_not_call_cli(self):

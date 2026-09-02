@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import Mock
 
+from openpyxl import Workbook
+
 from backend.ai.types import (
     TEST_CASE_FIELDS,
     SectionAIResult,
@@ -116,3 +118,31 @@ def test_local_document_generates_xlsx_without_online_document_services(
     assert Path(result["output_file_path"]).is_file()
     assert Path(result["output_file_path"]).parent == (tmp_path / "output")
     online_factory.assert_not_called()
+
+
+def test_local_xlsx_input_is_never_overwritten_by_default_output_name(tmp_path):
+    requirement = tmp_path / "登录需求-用例.xlsx"
+    workbook = Workbook()
+    workbook.active["A1"] = "登录需求"
+    workbook.save(requirement)
+    before = requirement.read_bytes()
+    source = RequirementDocumentSource.create("file", requirement)
+    template_paths = DefaultTemplateManager(tmp_path / "user-data").ensure_all()
+    generator = build_generator(
+        _local_snapshot(tmp_path),
+        _provider(),
+        source=source,
+        default_template_paths=template_paths,
+        document_factory=Mock(side_effect=AssertionError("不应连接在线文档服务")),
+        spreadsheet_factory=Mock(side_effect=AssertionError("不应连接在线文档服务")),
+    )
+
+    try:
+        result = generator.generate(source)
+    finally:
+        generator.close()
+
+    assert result["success"] is True
+    assert Path(result["output_file_path"]) != requirement
+    assert Path(result["output_file_path"]).name == "登录需求-用例-2.xlsx"
+    assert requirement.read_bytes() == before
